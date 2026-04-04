@@ -51,7 +51,18 @@ Sistema completo de gestão para clínicas estéticas com módulos de Estoque, A
 
 ## Tarefas Concluídas
 
-### 2026-04-04 — Aba Relatórios Financeiros (esta sessão)
+### 2026-04-04 — Exportação de PDF nos Relatórios Financeiros
+- Adicionado botão **"Exportar PDF"** na página `/financeiro/relatorios`
+- Novo endpoint `GET /api/finance/reports/export-pdf` que gera PDF completo com reportlab:
+  - KPIs do mês (entradas, saídas, lucro líquido)
+  - Tabela de evolução mensal (6 meses)
+  - Movimentações por categoria
+  - Entradas por forma de pagamento
+  - Últimas 30 transações
+- Download automático via blob no frontend
+- Testes: 100% backend e frontend ✅
+
+### 2026-04-04 — Aba Relatórios Financeiros (separação de rotas)
 - **Problema:** `/financeiro/relatorios` apontava para o mesmo componente `Finance` (sem diferenciação)
 - **Solução:**
   1. Criado `FinanceReports.js` com gráficos recharts (evolução mensal, por categoria, por forma de pagamento)
