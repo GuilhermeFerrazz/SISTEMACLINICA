@@ -361,6 +361,176 @@ async def get_by_payment(current_user: dict = Depends(get_current_user)):
 
     return [{"method": m, "total": v} for m, v in methods.items()]
 
+
+@api_router.get("/finance/reports/export-pdf")
+async def export_finance_pdf(current_user: dict = Depends(get_current_user)):
+    """Gera e retorna o relatório financeiro completo em PDF."""
+    now = datetime.now(timezone.utc)
+    first_day = now.replace(day=1).strftime("%Y-%m-%d")
+    month_label = now.strftime("%B/%Y").capitalize()
+
+    # ---- Coleta de dados ----
+    # Sumário do mês
+    txs_month = await db.transactions.find({"date": {"$gte": first_day}}, {"_id": 0}).to_list(5000)
+    income = sum(t.get("amount", 0) for t in txs_month if t.get("type") == "income")
+    expense = sum(t.get("amount", 0) for t in txs_month if t.get("type") == "expense")
+    profit = income - expense
+
+    # Evolução mensal (6 meses)
+    monthly_data = []
+    for i in range(5, -1, -1):
+        md = (now.replace(day=1) - timedelta(days=i * 28)).replace(day=1)
+        ms = md.strftime("%Y-%m-%d")
+        if md.month == 12:
+            me = md.replace(year=md.year + 1, month=1, day=1).strftime("%Y-%m-%d")
+        else:
+            me = md.replace(month=md.month + 1, day=1).strftime("%Y-%m-%d")
+        txs_m = await db.transactions.find({"date": {"$gte": ms, "$lt": me}}, {"_id": 0}).to_list(5000)
+        inc_m = sum(t.get("amount", 0) for t in txs_m if t.get("type") == "income")
+        exp_m = sum(t.get("amount", 0) for t in txs_m if t.get("type") == "expense")
+        monthly_data.append((md.strftime("%b/%Y"), inc_m, exp_m, inc_m - exp_m))
+
+    # Por categoria
+    categories: dict = {}
+    for t in txs_month:
+        cat = t.get("category", "Outros")
+        if cat not in categories:
+            categories[cat] = {"income": 0, "expense": 0}
+        if t.get("type") == "income":
+            categories[cat]["income"] += t.get("amount", 0)
+        else:
+            categories[cat]["expense"] += t.get("amount", 0)
+
+    # Por pagamento
+    methods: dict = {}
+    for t in txs_month:
+        if t.get("type") == "income":
+            m = t.get("payment_method", "Outros")
+            methods[m] = methods.get(m, 0) + t.get("amount", 0)
+
+    # Últimas transações (até 30)
+    all_txs = await db.transactions.find({}, {"_id": 0}).sort("date", -1).to_list(30)
+
+    # ---- Helpers ----
+    def brl(v):
+        return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+    # ---- Construção do PDF ----
+    buf = BytesIO()
+    doc_pdf = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=20*mm, rightMargin=20*mm,
+        topMargin=20*mm, bottomMargin=20*mm
+    )
+    styles = getSampleStyleSheet()
+    green = HexColor("#2d6a4f")
+    red   = HexColor("#c1121f")
+    gray  = HexColor("#6b7280")
+    white = HexColor("#ffffff")
+    light = HexColor("#f0faf4")
+    dark_green = HexColor("#1b4332")
+
+    title_style  = ParagraphStyle("Title",  parent=styles["Normal"], fontSize=20, textColor=dark_green, spaceAfter=4, fontName="Helvetica-Bold")
+    sub_style    = ParagraphStyle("Sub",    parent=styles["Normal"], fontSize=10, textColor=gray, spaceAfter=12)
+    section_style= ParagraphStyle("Sec",    parent=styles["Normal"], fontSize=12, textColor=dark_green, spaceBefore=14, spaceAfter=6, fontName="Helvetica-Bold")
+    normal       = ParagraphStyle("Norm",   parent=styles["Normal"], fontSize=9,  textColor=HexColor("#111827"))
+
+    col_w = (doc_pdf.width) / 3
+
+    def make_table(data, col_widths, header_bg=green):
+        t = Table(data, colWidths=col_widths, repeatRows=1)
+        n_rows = len(data)
+        style_cmds = [
+            ("BACKGROUND",  (0, 0), (-1, 0), header_bg),
+            ("TEXTCOLOR",   (0, 0), (-1, 0), white),
+            ("FONTNAME",    (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE",    (0, 0), (-1, 0), 9),
+            ("FONTSIZE",    (0, 1), (-1, -1), 9),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [white, light]),
+            ("GRID",        (0, 0), (-1, -1), 0.4, HexColor("#d1fae5")),
+            ("VALIGN",      (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING",  (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING",(0,0), (-1, -1), 5),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING",(0, 0), (-1, -1), 8),
+        ]
+        t.setStyle(style_cmds)
+        return t
+
+    story = []
+
+    # --- Cabeçalho ---
+    story.append(Paragraph("Relatório Financeiro", title_style))
+    story.append(Paragraph(f"Gerado em {now.strftime('%d/%m/%Y às %H:%M')} • Referência: {month_label}", sub_style))
+
+    # --- KPIs ---
+    story.append(Paragraph("Resumo do Mês Atual", section_style))
+    kpi_data = [
+        ["Indicador", "Valor"],
+        ["Entradas",  brl(income)],
+        ["Saídas",    brl(expense)],
+        ["Lucro Líquido", brl(profit)],
+    ]
+    story.append(make_table(kpi_data, [doc_pdf.width * 0.6, doc_pdf.width * 0.4]))
+    story.append(Spacer(1, 8))
+
+    # --- Evolução Mensal ---
+    story.append(Paragraph("Evolução Mensal (últimos 6 meses)", section_style))
+    ev_data = [["Mês", "Entradas", "Saídas", "Lucro"]]
+    for row in monthly_data:
+        ev_data.append([row[0], brl(row[1]), brl(row[2]), brl(row[3])])
+    w4 = doc_pdf.width / 4
+    story.append(make_table(ev_data, [w4, w4, w4, w4]))
+    story.append(Spacer(1, 8))
+
+    # --- Por Categoria ---
+    story.append(Paragraph("Movimentações por Categoria (mês atual)", section_style))
+    cat_data = [["Categoria", "Entradas", "Saídas"]]
+    for cat, v in categories.items():
+        cat_data.append([cat, brl(v["income"]), brl(v["expense"])])
+    if len(cat_data) == 1:
+        cat_data.append(["Sem dados", "-", "-"])
+    w3 = doc_pdf.width / 3
+    story.append(make_table(cat_data, [w3, w3, w3]))
+    story.append(Spacer(1, 8))
+
+    # --- Por Forma de Pagamento ---
+    story.append(Paragraph("Entradas por Forma de Pagamento (mês atual)", section_style))
+    pay_data = [["Forma de Pagamento", "Total"]]
+    for method, total in methods.items():
+        pay_data.append([method, brl(total)])
+    if len(pay_data) == 1:
+        pay_data.append(["Sem dados", "-"])
+    story.append(make_table(pay_data, [doc_pdf.width * 0.6, doc_pdf.width * 0.4]))
+    story.append(Spacer(1, 8))
+
+    # --- Últimas Transações ---
+    story.append(Paragraph("Últimas Transações (até 30)", section_style))
+    tx_header = ["Data", "Descrição", "Categoria", "Pagamento", "Tipo", "Valor"]
+    tx_rows = [tx_header]
+    for t in all_txs:
+        tx_rows.append([
+            t.get("date", ""),
+            t.get("description", "")[:35],
+            t.get("category", ""),
+            t.get("payment_method", ""),
+            "Entrada" if t.get("type") == "income" else "Saída",
+            brl(t.get("amount", 0)),
+        ])
+    if len(tx_rows) == 1:
+        tx_rows.append(["-", "Nenhuma transação", "-", "-", "-", "-"])
+    col_txs = [20*mm, 55*mm, 28*mm, 25*mm, 18*mm, 24*mm]
+    story.append(make_table(tx_rows, col_txs))
+
+    doc_pdf.build(story)
+    buf.seek(0)
+    filename = f"relatorio_financeiro_{now.strftime('%Y%m%d')}.pdf"
+    return StreamingResponse(
+        buf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
 # ==================== PACIENTES & PRONTUÁRIO (R2 INTEGRADO) ====================
 
 @api_router.get("/patients")

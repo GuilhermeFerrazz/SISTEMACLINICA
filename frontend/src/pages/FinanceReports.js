@@ -6,9 +6,10 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell, Legend
 } from 'recharts';
+import { Button } from '@/components/ui/button';
 import {
   TrendingUp, TrendingDown, DollarSign, BarChart3,
-  PieChart as PieChartIcon, Calendar
+  PieChart as PieChartIcon, Calendar, FileDown, Loader2
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -40,6 +41,7 @@ const FinanceReports = () => {
   const [byPayment, setByPayment] = useState([]);
   const [summary, setSummary] = useState({ monthly_income: 0, monthly_expense: 0, monthly_profit: 0 });
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     fetchAll();
@@ -65,6 +67,30 @@ const FinanceReports = () => {
     }
   };
 
+  const handleExportPDF = async () => {
+    setExporting(true);
+    try {
+      const response = await axios.get(`${API}/finance/reports/export-pdf`, {
+        withCredentials: true,
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
+      const link = document.createElement('a');
+      link.href = url;
+      const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      link.setAttribute('download', `relatorio_financeiro_${today}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast.success('PDF exportado com sucesso!');
+    } catch (err) {
+      toast.error('Erro ao exportar PDF');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   if (loading) {
     return (
       <Layout>
@@ -81,13 +107,27 @@ const FinanceReports = () => {
     <Layout>
       <div className="p-6 md:p-8 lg:p-12">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-light tracking-tight text-foreground">
-            Relatórios Financeiros
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Análise detalhada de receitas, despesas e desempenho financeiro
-          </p>
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+          <div>
+            <h1 className="text-4xl font-light tracking-tight text-foreground">
+              Relatórios Financeiros
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              Análise detalhada de receitas, despesas e desempenho financeiro
+            </p>
+          </div>
+          <Button
+            data-testid="export-pdf-btn"
+            onClick={handleExportPDF}
+            disabled={exporting}
+            className="gap-2 bg-primary text-primary-foreground"
+          >
+            {exporting ? (
+              <><Loader2 className="w-4 h-4 animate-spin" /> Exportando...</>
+            ) : (
+              <><FileDown className="w-4 h-4" /> Exportar PDF</>
+            )}
+          </Button>
         </div>
 
         {/* KPI Cards */}
