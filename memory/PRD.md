@@ -1,36 +1,83 @@
-# PRD - Sistema de Gestão - Clínica de Estética
+# PRD - Sistema de Gestão de Clínica Estética
 
-## Problem Statement
-Sistema completo para clínica de estética com prontuário eletrônico com LGPD, termos de consentimento editáveis, assinatura digital remota via WhatsApp, PDF com papel timbrado e QR Code.
+## Visão Geral
+Sistema completo de gestão para clínicas estéticas com módulos de Estoque, Agenda, CRM, Financeiro e Administração.
 
-## Architecture
-- **Backend**: FastAPI + MongoDB + ReportLab (PDF) + qrcode
-- **Frontend**: React + Tailwind CSS + Shadcn UI
-- **Auth**: JWT httpOnly cookies (bcrypt)
+**Repositório:** https://github.com/GuilhermeFerrazz/SISTEMACLINICA.git  
+**Deploy Vercel:** https://sistemaclinica-eta.vercel.app
 
-## What's Been Implemented
+---
 
-### Original (Fases 1-3) - Estoque, Agenda, CRM, LGPD, WhatsApp, Dashboard, Admin
+## Arquitetura
+- **Frontend:** React.js + Tailwind CSS + shadcn/ui + Recharts
+- **Backend:** FastAPI (Python) + MongoDB
+- **Storage:** Cloudflare R2 (fotos de prontuário, logos)
+- **Auth:** JWT (cookies httpOnly, refresh token)
+- **Preview URL:** https://finance-reports-tab.preview.emergentagent.com
 
-### Fase 4 - Termos de Consentimento Editáveis por Procedimento
-### Fase 5 - Assinatura Digital Remota via WhatsApp
-### Fase 6 - PDF com Papel Timbrado + Polling
-### Fase 7 - Papel Timbrado nas Configurações do CRM + Imagem de Fundo PNG
+---
 
-### Fase 8 - Prontuário Eletrônico com LGPD (Jan 2026)
-- **Backend**: Coleção `medical_records` com CRUD completo
-  - POST /api/medical-records - Criar prontuário
-  - GET /api/medical-records/patient/{patient_id} - Listar prontuários
-  - GET /api/medical-records/{record_id} - Detalhes
-  - PUT /api/medical-records/{record_id} - Atualizar
-  - DELETE /api/medical-records/{record_id} - Excluir
-  - GET /api/medical-records/patient/{patient_id}/export - Exportar LGPD
-  - DELETE /api/medical-records/patient/{patient_id}/all - Excluir tudo LGPD
-- **Campos**: Procedimento, data, queixa principal, anotações clínicas, diagnóstico, plano de tratamento, técnicas utilizadas, produtos aplicados, observações, fotos antes/depois, notas de evolução, próxima sessão
-- **Frontend**: Página /prontuario com seleção de paciente, timeline de prontuários, criação/edição/visualização com fotos
-- **LGPD**: Exportar dados, excluir todos os prontuários, auditoria de criação/atualização
-- **Menu**: "Prontuário" adicionado no menu lateral do CRM
+## Módulos Implementados
 
-## Backlog
-- [ ] Relatórios financeiros (P2)
-- [ ] Audit logs (P2)
+### Estoque
+- Dashboard com estatísticas (produtos, vencimentos, estoque baixo)
+- CRUD de Produtos com QR Code
+- Movimentações (entrada/saída)
+- Relatórios de consumo e produtos vencendo
+- Scanner QR
+- Configurações
+
+### Agenda
+- Gestão de agendamentos
+- Configurações (procedimentos, horários)
+- Integração WhatsApp para confirmações
+
+### CRM
+- Cadastro de pacientes
+- Prontuário eletrônico com fotos (antes/depois)
+- Dashboard de pacientes
+- Alertas: Aniversários, Retorno Botox, Pacientes Inativos
+- Termo de consentimento digital (assinatura + link WhatsApp)
+- Configurações de templates de mensagem
+
+### Financeiro
+- `/financeiro` → **Fluxo de Caixa** (Finance.js): lista de transações, nova transação, resumo mensal
+- `/financeiro/relatorios` → **Relatórios** (FinanceReports.js): gráficos de evolução mensal, por categoria, por forma de pagamento
+
+### Administração
+- Gestão de usuários (admin)
+
+---
+
+## Tarefas Concluídas
+
+### 2026-04-04 — Aba Relatórios Financeiros (esta sessão)
+- **Problema:** `/financeiro/relatorios` apontava para o mesmo componente `Finance` (sem diferenciação)
+- **Solução:**
+  1. Criado `FinanceReports.js` com gráficos recharts (evolução mensal, por categoria, por forma de pagamento)
+  2. Atualizado `App.js`: rota `/financeiro/relatorios` → `FinanceReports`
+  3. Adicionados 3 endpoints no backend:
+     - `GET /api/finance/reports/monthly` — evolução 6 meses
+     - `GET /api/finance/reports/by-category` — receitas/despesas por categoria
+     - `GET /api/finance/reports/by-payment` — entradas por forma de pagamento
+- **Testes:** 100% backend e frontend ✅
+
+---
+
+## Backlog / Próximas Tarefas
+
+### P0 (Crítico)
+- Nenhum item crítico pendente
+
+### P1 (Alta prioridade)
+- Filtro de período nos Relatórios Financeiros (não apenas mês atual)
+- Exportar relatório financeiro em PDF
+
+### P2 (Média prioridade)
+- Comparação de meses nos relatórios
+- Dashboard unificado com KPIs de todos os módulos
+- Notificações push para alertas CRM
+
+### Backlog
+- App mobile (React Native)
+- Integração com sistemas de pagamento
