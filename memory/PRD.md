@@ -4,130 +4,48 @@
 Sistema completo de gestão para clínicas estéticas com módulos de Estoque, Agenda, CRM, Financeiro e Administração.
 
 **Repositório:** https://github.com/GuilhermeFerrazz/SISTEMACLINICA.git  
-**Deploy Vercel:** https://sistemaclinica-eta.vercel.app
+**Preview URL:** https://finance-reports-tab.preview.emergentagent.com
 
 ---
 
 ## Arquitetura
 - **Frontend:** React.js + Tailwind CSS + shadcn/ui + Recharts
 - **Backend:** FastAPI (Python) + MongoDB
-- **Storage:** Cloudflare R2 (fotos de prontuário, logos)
-- **Auth:** JWT (cookies httpOnly, refresh token)
-- **Preview URL:** https://finance-reports-tab.preview.emergentagent.com
-
----
-
-## Módulos Implementados
-
-### Estoque
-- Dashboard com estatísticas (produtos, vencimentos, estoque baixo)
-- CRUD de Produtos com QR Code
-- Movimentações (entrada/saída)
-- Relatórios de consumo e produtos vencendo
-- Scanner QR
-- Configurações
-
-### Agenda
-- Gestão de agendamentos
-- Configurações (procedimentos, horários)
-- Integração WhatsApp para confirmações
-
-### CRM
-- Cadastro de pacientes
-- Prontuário eletrônico com fotos (antes/depois)
-- Dashboard de pacientes
-- Alertas: Aniversários, Retorno Botox, Pacientes Inativos
-- Termo de consentimento digital (assinatura + link WhatsApp)
-- Configurações de templates de mensagem
-
-### Financeiro
-- `/financeiro` → **Fluxo de Caixa** (Finance.js): lista de transações, nova transação, resumo mensal
-- `/financeiro/relatorios` → **Relatórios** (FinanceReports.js): gráficos de evolução mensal, por categoria, por forma de pagamento
-
-### Administração
-- Gestão de usuários (admin)
+- **Storage:** Cloudflare R2
+- **Auth:** JWT (cookies httpOnly)
 
 ---
 
 ## Tarefas Concluídas
 
+### 2026-04-05 — Lock/Unlock do Drag-and-Drop do menu
+- Botão `✎ Editar` no header MÓDULOS — padrão travado, sem grips visíveis
+- Ao clicar: botão vira `✓ Concluído` verde + banner de instrução + grips pulsantes + submenus recolhidos
+- Após soltar (drop): **auto-trava** com delay de 600ms
+- Clicando `Concluído`: trava manualmente a qualquer momento
+- Testes: 100% ✅
+
 ### 2026-04-05 — Drag-and-drop para reordenar seções do menu
-- `Layout.js`: Seções do sidebar (Estoque, Agenda, CRM, Financeiro) são reordenáveis via drag-and-drop com HTML5 Drag API nativa
-- Ícone grip `GripVertical` visível à esquerda de cada seção, cursor muda para `grab`/`grabbing`
-- Visual feedback: seção arrastada fica opaca, destino fica com borda primária
-- Ordem salva em `localStorage` (`sidebar-section-order`) e restaurada automaticamente no reload
-- Seção Administração permanece fixa no grupo "SISTEMA" (não draggable)
-- Testes: **100% frontend** ✅
+- Seções (Estoque, Agenda, CRM, Financeiro) reordenáveis via HTML5 DnD
+- Persistência em localStorage ['sidebar-section-order']
+- Admin fixo em SISTEMA (não draggable)
 
-### 2026-04-05 — Sidebar maior + Responsividade completa
-- **Layout.js** completamente reescrito com 3 breakpoints:
-  - **Desktop (lg 1024px+)**: Sidebar 280px com logo, labels de seção "MÓDULOS"/"SISTEMA", ícones com fundo em badge, animação accordion suave (max-h transition), card de usuário expandido com badge Admin, botão Sair com label
-  - **Tablet (md 768px-1023px)**: Icon rail de 64px — ícones com tooltip, sem labels, theme toggle e logout no rodapé
-  - **Mobile (<768px)**: Topbar fixa com menu + logo + toggle; drawer deslizante com CSS transform + overlay; bottom nav com 5 itens e highlight animado
-- Navegação fecha drawer automaticamente ao trocar de rota
-- Body scroll travado enquanto drawer aberto
-- Testes: **100% frontend** ✅
+### 2026-04-05 — Bug espaço vazio corrigido
+- Causa: flex-1 + ml-X com sidebar fixed. Fix: block + pl-X
 
-### 2026-04-05 — Cards KPI sóbrios + Redesign PatientsDashboard
-- **Dashboard.js**: Gradientes dos 4 KPI cards substituídos por tons profundos: verde floresta (`emerald-800→teal-700`), azul oceano (`sky-800→cyan-700`), índigo (`indigo-800→violet-700`), borgonha (`rose-800→pink-700`)
-- **PatientsDashboard.js**: Redesign completo com mesmo estilo moderno do Dashboard — 4 KPI cards sóbrios, gráfico de barras de procedimentos (recharts), resumo do mês, abas de alertas modernizadas (Aniversários/Botox/Inativos), lista de pacientes recentes com avatar inicial
-- Testes: 100% frontend ✅
+### 2026-04-05 — Sidebar maior + Responsividade
+- Desktop 280px | Tablet icon-rail 64px | Mobile topbar + drawer + bottom nav
 
-### 2026-04-05 — Redesign Dashboard (estilo moderno)
-- `Dashboard.js` completamente reescrito com:
-  - Header "Olá, [Nome]! 👋" com data/dia da semana
-  - 4 KPI cards com gradientes coloridos (teal, laranja, roxo, rosa), decorações geométricas, badge de trend e hover scale
-  - Gráfico de barras (recharts) para movimentações de estoque
-  - Painel lateral financeiro (Entradas/Saídas/Lucro Líquido) com navigate para /financeiro
-  - Tabela de movimentações recentes com linhas zebradas, badges de tipo coloridos e empty states
-- Funciona em dark e light mode automaticamente via CSS variables
-- Testes: 95% frontend ✅
+### 2026-04-05 — Redesign UI completo
+- ThemeContext dark/light, CSS variables, Dashboard modernizado, PatientsDashboard redesenhado
 
-### 2026-04-05 — Redesign UI + Toggle Tema Claro/Escuro
-- `ThemeContext.js`: contexto global que aplica classe `.dark` ao `<html>` e persiste no localStorage
-- `index.css`: CSS variables completas para `:root` (light) e `.dark` — nova paleta moderna sobre base verde #2d6a4f
-- `Layout.js`: redesign completo da sidebar — indicadores ativos (barra verde esquerda), bordas arredondadas (rounded-xl/2xl), avatar inicial do usuário, botão theme toggle ☀️/🌙 + logout no rodapé, menu mobile drawer, micro-animações
-- `App.js`: envolto em `ThemeProvider`
-- Testes: 100% frontend ✅
-
-### 2026-04-04 — Exportação de PDF nos Relatórios Financeiros
-- Adicionado botão **"Exportar PDF"** na página `/financeiro/relatorios`
-- Novo endpoint `GET /api/finance/reports/export-pdf` que gera PDF completo com reportlab:
-  - KPIs do mês (entradas, saídas, lucro líquido)
-  - Tabela de evolução mensal (6 meses)
-  - Movimentações por categoria
-  - Entradas por forma de pagamento
-  - Últimas 30 transações
-- Download automático via blob no frontend
-- Testes: 100% backend e frontend ✅
-
-### 2026-04-04 — Aba Relatórios Financeiros (separação de rotas)
-- **Problema:** `/financeiro/relatorios` apontava para o mesmo componente `Finance` (sem diferenciação)
-- **Solução:**
-  1. Criado `FinanceReports.js` com gráficos recharts (evolução mensal, por categoria, por forma de pagamento)
-  2. Atualizado `App.js`: rota `/financeiro/relatorios` → `FinanceReports`
-  3. Adicionados 3 endpoints no backend:
-     - `GET /api/finance/reports/monthly` — evolução 6 meses
-     - `GET /api/finance/reports/by-category` — receitas/despesas por categoria
-     - `GET /api/finance/reports/by-payment` — entradas por forma de pagamento
-- **Testes:** 100% backend e frontend ✅
+### 2026-04-04 — Finance Reports + PDF Export
+- FinanceReports.js com gráficos recharts
+- Endpoint /api/finance/reports/export-pdf com reportlab
 
 ---
 
-## Backlog / Próximas Tarefas
-
-### P0 (Crítico)
-- Nenhum item crítico pendente
-
-### P1 (Alta prioridade)
-- Filtro de período nos Relatórios Financeiros (não apenas mês atual)
-- Exportar relatório financeiro em PDF
-
-### P2 (Média prioridade)
-- Comparação de meses nos relatórios
-- Dashboard unificado com KPIs de todos os módulos
-- Notificações push para alertas CRM
-
-### Backlog
-- App mobile (React Native)
-- Integração com sistemas de pagamento
+## Backlog P1
+- Filtro de período nos relatórios financeiros
+- Redesign páginas de listagem (CRM, Produtos, Movimentações)
+- Badge de alertas no sidebar (CRM, Agenda)

@@ -7,7 +7,7 @@ import {
   LogOut, Settings, Calendar, Users, ChevronDown, Box,
   Gift, Syringe, UserX, ShieldAlert, FileText,
   DollarSign, TrendingUp, Sun, Moon, Menu, X,
-  ChevronRight, GripVertical
+  ChevronRight, GripVertical, Pencil, Lock, Check
 } from 'lucide-react';
 
 /* ─── Sidebar width ──────────────────────────────────── */
@@ -110,18 +110,20 @@ const DraggableSection = ({
   isActive, isOpen, onToggle, children,
   isDragging, isDragOver,
   onDragStart, onDragEnter, onDragOver, onDragEnd, onDrop,
+  editMode,
 }) => (
   <div
-    draggable
-    onDragStart={onDragStart}
-    onDragEnter={onDragEnter}
-    onDragOver={onDragOver}
-    onDragEnd={onDragEnd}
-    onDrop={onDrop}
+    draggable={editMode}
+    onDragStart={editMode ? onDragStart : undefined}
+    onDragEnter={editMode ? onDragEnter : undefined}
+    onDragOver={editMode ? onDragOver : undefined}
+    onDragEnd={editMode ? onDragEnd : undefined}
+    onDrop={editMode ? onDrop : undefined}
     className={`
       relative rounded-2xl transition-all duration-200
-      ${isDragging ? 'opacity-40 scale-[0.98]' : 'opacity-100'}
-      ${isDragOver ? 'ring-2 ring-primary/40 ring-offset-1 ring-offset-transparent bg-primary/5' : ''}
+      ${editMode ? 'cursor-default' : ''}
+      ${isDragging && editMode ? 'opacity-40 scale-[0.98]' : 'opacity-100'}
+      ${isDragOver && editMode ? 'ring-2 ring-primary/40 ring-offset-1 ring-offset-transparent bg-primary/5' : ''}
     `}
   >
     <button
@@ -138,14 +140,20 @@ const DraggableSection = ({
       {/* Active bar */}
       <span className={`
         absolute left-0 top-1/2 -translate-y-1/2 w-1 rounded-r-full transition-all duration-300
-        ${isActive ? 'h-7 bg-primary opacity-100' : 'h-0 opacity-0'}
+        ${isActive && !editMode ? 'h-7 bg-primary opacity-100' : 'h-0 opacity-0'}
       `} />
 
       <div className="flex items-center gap-3.5 flex-1 min-w-0">
-        {/* Drag handle */}
+        {/* Drag handle — only visible & active in editMode */}
         <span
-          title="Arraste para reordenar"
-          className="flex-shrink-0 cursor-grab active:cursor-grabbing text-foreground/25 hover:text-foreground/60 transition-colors"
+          title={editMode ? 'Arraste para reordenar' : ''}
+          className={`
+            flex-shrink-0 transition-all duration-200
+            ${editMode
+              ? 'cursor-grab active:cursor-grabbing text-primary/60 hover:text-primary animate-pulse'
+              : 'opacity-0 w-0 overflow-hidden pointer-events-none'
+            }
+          `}
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
         >
@@ -155,9 +163,11 @@ const DraggableSection = ({
         {/* Icon badge */}
         <span className={`
           flex items-center justify-center w-8 h-8 rounded-xl flex-shrink-0 transition-all duration-200
-          ${isActive
-            ? 'bg-primary/15 text-primary'
-            : 'bg-muted/50 text-foreground/60 group-hover:bg-muted group-hover:text-foreground'}
+          ${editMode
+            ? 'bg-primary/10 ring-1 ring-primary/20'
+            : isActive
+              ? 'bg-primary/15 text-primary'
+              : 'bg-muted/50 text-foreground/60 group-hover:bg-muted group-hover:text-foreground'}
         `}>
           <Icon
             className="w-[17px] h-[17px]"
@@ -165,7 +175,7 @@ const DraggableSection = ({
           />
         </span>
 
-        <span className={`text-[15px] font-medium tracking-tight truncate ${isActive ? 'text-primary' : ''}`}>
+        <span className={`text-[15px] font-medium tracking-tight truncate ${isActive && !editMode ? 'text-primary' : ''}`}>
           {label}
         </span>
       </div>
@@ -173,13 +183,14 @@ const DraggableSection = ({
       <ChevronDown className={`
         w-4 h-4 flex-shrink-0 ml-1 transition-transform duration-300 ease-out
         ${isOpen ? 'rotate-180 text-primary' : 'text-foreground/40'}
+        ${editMode ? 'opacity-30' : ''}
       `} />
     </button>
 
-    {/* Submenu */}
+    {/* Submenu — hidden in edit mode */}
     <div className={`
       overflow-hidden transition-all duration-300 ease-out
-      ${isOpen ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'}
+      ${isOpen && !editMode ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'}
     `}>
       <div className="ml-10 pl-3 border-l-2 border-border/40 mt-0.5 mb-1 space-y-0.5">
         {children}
@@ -216,8 +227,9 @@ const SidebarContent = ({
   sectionOrder, setSectionOrder,
   openMap, toggleOpen,
   handleLogout, onLinkClick,
+  editMode, setEditMode,
 }) => {
-  const dragId    = useRef(null);
+  const dragId     = useRef(null);
   const dragOverId = useRef(null);
 
   const isActive = useCallback((id) => {
@@ -244,8 +256,10 @@ const SidebarContent = ({
     next.splice(to, 0, dragId.current);
     setSectionOrder(next);
     localStorage.setItem(LS_KEY, JSON.stringify(next));
-    dragId.current    = null;
+    dragId.current     = null;
     dragOverId.current = null;
+    // Auto-lock after drop
+    setTimeout(() => setEditMode(false), 600);
   };
   const handleDragEnd = () => {
     dragId.current    = null;
@@ -270,12 +284,41 @@ const SidebarContent = ({
 
       {/* Nav */}
       <nav className="px-3 flex-1 overflow-y-auto space-y-1 pb-4" onClick={onLinkClick}>
-        <p className="px-4 pb-2 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/50 flex items-center gap-2">
-          Módulos
-          <span title="Arraste para reordenar" className="text-muted-foreground/40">
-            <GripVertical className="w-3 h-3 inline" />
-          </span>
-        </p>
+
+        {/* MÓDULOS header with edit/lock toggle */}
+        <div className="px-1 pb-2 flex items-center justify-between">
+          <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/50">
+            Módulos
+          </p>
+          <button
+            data-testid="edit-order-btn"
+            onClick={(e) => { e.stopPropagation(); setEditMode(m => !m); }}
+            title={editMode ? 'Concluir edição' : 'Reordenar módulos'}
+            className={`
+              flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-semibold
+              transition-all duration-200 active:scale-95
+              ${editMode
+                ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/30'
+                : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground border border-border/50'
+              }
+            `}
+          >
+            {editMode
+              ? <><Check className="w-3 h-3" /> Concluído</>
+              : <><Pencil className="w-3 h-3" /> Editar</>
+            }
+          </button>
+        </div>
+
+        {/* Edit mode banner */}
+        {editMode && (
+          <div className="mx-1 mb-2 px-3 py-2 rounded-xl bg-primary/8 border border-primary/20 flex items-center gap-2">
+            <GripVertical className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+            <p className="text-[11px] text-primary font-medium leading-tight">
+              Arraste as seções para reordenar
+            </p>
+          </div>
+        )}
 
         {sectionOrder.map((id) => {
           const def = SECTION_DEFS[id];
@@ -286,7 +329,7 @@ const SidebarContent = ({
               {...def}
               isActive={isActive(id)}
               isOpen={openMap[id]}
-              onToggle={() => toggleOpen(id)}
+              onToggle={() => !editMode && toggleOpen(id)}
               isDragging={false}
               isDragOver={false}
               onDragStart={handleDragStart(id)}
@@ -294,6 +337,7 @@ const SidebarContent = ({
               onDragOver={handleDragOver}
               onDragEnd={handleDragEnd}
               onDrop={handleDrop(id)}
+              editMode={editMode}
             >
               {SUB_ITEMS[id]?.map(i => <SubLink key={i.to} {...i} />)}
             </DraggableSection>
@@ -382,6 +426,7 @@ const Layout = ({ children }) => {
 
   const [mobileOpen,    setMobileOpen]    = useState(false);
   const [sectionOrder,  setSectionOrder]  = useState(loadOrder);
+  const [editMode,      setEditMode]      = useState(false);
 
   /* Track which sections are open */
   const initOpen = useCallback(() => {
@@ -413,6 +458,7 @@ const Layout = ({ children }) => {
     sectionOrder, setSectionOrder,
     openMap, toggleOpen,
     handleLogout,
+    editMode, setEditMode,
   };
 
   const mobileNavItems = buildMobileNav(sectionOrder);
