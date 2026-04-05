@@ -1,0 +1,111 @@
+{
+  "theme_and_archetype": {
+    "primary_theme": "dark",
+    "supported_themes": ["light", "dark"],
+    "archetype": "Hybrid: Archetype 4 (Swiss & High-Contrast) + Archetype 5 (Jewel & Luxury) with Neon/Glassmorphism influences",
+    "vibe": "Modern, premium, high-tech but grounded medical aesthetic. The dark mode feels like a high-end command center (neon accents, glass cards), while the light mode feels clean, sterile, and trustworthy."
+  },
+  "typography": {
+    "fonts": {
+      "headings": "Outfit",
+      "body": "DM Sans",
+      "instructions": "Import both fonts via Google Fonts. Apply 'font-outfit' to h1-h6 and 'font-dm-sans' to body, p, span, inputs, etc."
+    },
+    "hierarchy": {
+      "h1": "text-4xl md:text-5xl font-semibold tracking-tight",
+      "h2": "text-2xl md:text-3xl font-medium tracking-tight",
+      "h3": "text-xl font-medium",
+      "body": "text-base leading-relaxed",
+      "small": "text-sm text-muted-foreground",
+      "overline": "text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
+    }
+  },
+  "colors": {
+    "primary_brand": "#2d6a4f",
+    "css_variables_setup": "All colors MUST be defined as HSL values in :root and .dark to support Tailwind next-gen styling and shadcn primitives. Example: --primary: 154 40% 30%;",
+    "light_mode": {
+      "background": "0 0% 98%",
+      "foreground": "154 30% 10%",
+      "card": "0 0% 100%",
+      "card_foreground": "154 30% 10%",
+      "primary": "154 40% 30%",
+      "primary_foreground": "0 0% 100%",
+      "accent": "154 20% 92%",
+      "accent_foreground": "154 40% 30%",
+      "border": "154 10% 90%",
+      "muted": "154 10% 94%"
+    },
+    "dark_mode": {
+      "background": "154 30% 4%",
+      "foreground": "154 20% 98%",
+      "card": "154 30% 6%",
+      "card_foreground": "154 20% 98%",
+      "primary": "151 76% 58%",
+      "primary_foreground": "154 30% 10%",
+      "accent": "154 30% 12%",
+      "accent_foreground": "151 76% 58%",
+      "border": "154 20% 15%",
+      "muted": "154 30% 10%",
+      "neon_glow": "shadow-[0_0_15px_rgba(74,222,128,0.2)]"
+    }
+  },
+  "layout_and_spacing": {
+    "general": "Use generous padding. Dashboard grids should be tight (gap-4 or gap-6) but internally spacious (p-6).",
+    "sidebar": {
+      "width": "256px (w-64)",
+      "behavior": "Fixed on left for md+ screens. Hidden on mobile.",
+      "items": "Modules: Estoque, Agenda, CRM (Pacientes), Financeiro, Administração. Use Lucide icons.",
+      "footer": "User profile with avatar, name, role, and Theme Toggle button."
+    },
+    "mobile_nav": {
+      "behavior": "Bottom bar (fixed bottom-0 w-full z-50 border-t bg-background/80 backdrop-blur-xl) containing main icons. Visible only on md:hidden."
+    },
+    "borders_and_radius": {
+      "cards": "rounded-2xl",
+      "buttons_inputs": "rounded-xl",
+      "tags_badges": "rounded-full"
+    },
+    "glassmorphism": {
+      "dark_mode_cards": "In dark mode, cards should use bg-card/60 backdrop-blur-xl border border-white/5. This creates the requested modern neon/dark dashboard feel.",
+      "light_mode_cards": "In light mode, use solid bg-card with subtle shadow-sm and border-border."
+    }
+  },
+  "components": {
+    "shadcn_overrides": {
+      "Card": "Override border-radius to rounded-2xl. Apply glassmorphism utility classes in dark mode.",
+      "Button": "Add micro-animations: active:scale-95 transition-all duration-200.",
+      "Sidebar_Items": "Group hover effects. In dark mode, active item should have a subtle neon green background (bg-primary/10) and bright primary text, with a 2px left border."
+    },
+    "kpi_cards": "Use a bento grid (grid-cols-1 md:grid-cols-2 xl:grid-cols-4). Include a subtle trend line or mini chart.",
+    "tables": "Go cardless or place inside a large rounded-2xl card. Striped or highly separated rows. In dark mode, row hover should be bg-white/5.",
+    "theme_toggle": "Must be prominently placed (e.g., sidebar footer). Include a smooth icon rotation/transition between Sun/Moon."
+  },
+  "motion_and_interactions": {
+    "hover_states": "All buttons/links must have clear hover states. In dark mode, hover on cards should slightly intensify the border color (border-white/10 to border-primary/30).",
+    "active_states": "Scale down slightly (active:scale-[0.98]).",
+    "page_transitions": "Use Framer Motion (if available) for simple fade-in/slide-up on page load."
+  },
+  "media": {
+    "avatars": [
+      {
+        "url": "https://images.unsplash.com/photo-1615177393114-bd2917a4f74a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2MjJ8MHwxfHNlYXJjaHwyfHxwcm9mZXNzaW9uYWwlMjBkb2N0b3IlMjBwb3J0cmFpdHxlbnwwfHx8fDE3NzUzNTQxMTF8MA&ixlib=rb-4.1.0&q=85",
+        "category": "user_avatar",
+        "description": "Male doctor/admin profile for the sidebar footer."
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1755189118414-14c8dacdb082?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2MjJ8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBkb2N0b3IlMjBwb3J0cmFpdHxlbnwwfHx8fDE3NzUzNTQxMTF8MA&ixlib=rb-4.1.0&q=85",
+        "category": "patient_avatar",
+        "description": "Female professional profile for CRM/Patients list."
+      }
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Ensure CSS variables are correctly set up in index.css for both :root and .dark.",
+    "Implement the 256px sidebar and mobile bottom navigation properly using Tailwind responsive classes.",
+    "Do NOT use 'Inter' font. Use Google Fonts for Outfit (headings) and DM Sans (body).",
+    "Use lucide-react for all icons.",
+    "For the dark mode aesthetic, combine dark backgrounds with `backdrop-blur-xl` and `bg-white/5` for cards to emulate the modern glass/neon dashboard style without overcomplicating.",
+    "Add 'data-testid' to all buttons, navigation items, and interactive elements.",
+    "Do not break any existing Shadcn/UI component functionality, just override their classes using Tailwind."
+  ]
+}
