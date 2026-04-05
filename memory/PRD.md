@@ -51,6 +51,11 @@ Sistema completo de gestão para clínicas estéticas com módulos de Estoque, A
 
 ## Tarefas Concluídas
 
+### 2026-04-05 — Cards KPI sóbrios + Redesign PatientsDashboard
+- **Dashboard.js**: Gradientes dos 4 KPI cards substituídos por tons profundos: verde floresta (`emerald-800→teal-700`), azul oceano (`sky-800→cyan-700`), índigo (`indigo-800→violet-700`), borgonha (`rose-800→pink-700`)
+- **PatientsDashboard.js**: Redesign completo com mesmo estilo moderno do Dashboard — 4 KPI cards sóbrios, gráfico de barras de procedimentos (recharts), resumo do mês, abas de alertas modernizadas (Aniversários/Botox/Inativos), lista de pacientes recentes com avatar inicial
+- Testes: 100% frontend ✅
+
 ### 2026-04-05 — Redesign Dashboard (estilo moderno)
 - `Dashboard.js` completamente reescrito com:
   - Header "Olá, [Nome]! 👋" com data/dia da semana
