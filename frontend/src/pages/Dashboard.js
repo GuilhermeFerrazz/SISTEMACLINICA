@@ -169,7 +169,7 @@ const Dashboard = () => {
 
   return (
     <Layout>
-      <div data-testid="dashboard-page" className="p-6 md:p-8 space-y-6 max-w-[1400px]">
+      <div data-testid="dashboard-page" className="p-6 md:p-8 space-y-6 w-full max-w-[1400px]">
 
         {/* ── Header ── */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">

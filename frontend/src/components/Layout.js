@@ -317,7 +317,7 @@ const Layout = ({ children }) => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex">
+    <div className="min-h-screen bg-background">
 
       {/* ════════════════════════════════════════════
           DESKTOP SIDEBAR (lg+)
@@ -437,15 +437,14 @@ const Layout = ({ children }) => {
           MAIN CONTENT
       ════════════════════════════════════════════ */}
       <main
-        style={{ '--sidebar-w': SIDEBAR_W + 'px' }}
         className="
-          flex-1 min-h-screen overflow-auto
+          w-full min-h-screen
           pt-14 md:pt-0
           pb-16 md:pb-0
-          md:ml-16 lg:ml-[280px]
+          md:pl-16 lg:pl-[280px]
         "
       >
-        <div className="page-enter min-h-full">
+        <div className="page-enter w-full min-h-full">
           {children}
         </div>
       </main>
