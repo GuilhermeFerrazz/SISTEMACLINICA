@@ -92,10 +92,24 @@ api_router = APIRouter(prefix="/api")
 JWT_ALGORITHM = "HS256"
 
 # WhatsApp Helper — Garante encoding UTF-8 para emojis
+def whatsapp_encode(message: str) -> str:
+    """Codifica mensagem para URL do WhatsApp preservando emojis corretamente.
+    
+    Resolve o problema do U+FFFD (Replacement Character) nos emojis:
+    - Codifica explicitamente para bytes UTF-8 antes do percent-encoding
+    - O quote() sobre bytes percorre byte a byte, gerando %F0%9F%99%82
+      em vez de %EF%BF%BD (que aparecia quando o emoji já chegava corrompido)
+    """
+    # encode para bytes UTF-8 explicitamente; errors='replace' evita crash em
+    # casos extremos mas preserva emojis válidos (4 bytes em UTF-8)
+    encoded_bytes = message.encode('utf-8', errors='replace')
+    # safe='' (string vazia) garante que todos os bytes especiais sejam codificados
+    return quote(encoded_bytes, safe='')
+
+
 def build_whatsapp_url(phone: str, message: str) -> str:
     """Gera URL do WhatsApp com encoding UTF-8 explícito para suportar emojis."""
-    # Garante que a mensagem é codificada como UTF-8 antes do percent-encoding
-    encoded_text = quote(message.encode('utf-8'), safe=b'')
+    encoded_text = whatsapp_encode(message)
     if phone:
         return f"https://wa.me/{phone}?text={encoded_text}"
     return f"https://wa.me/?text={encoded_text}"

@@ -4,7 +4,7 @@
 Sistema completo de gestão para clínicas estéticas com módulos de Estoque, Agenda, CRM, Financeiro e Administração.
 
 **Repositório:** https://github.com/GuilhermeFerrazz/SISTEMACLINICA.git  
-**Preview URL:** https://finance-reports-tab.preview.emergentagent.com
+**Preview URL:** https://whatsapp-emoji-codec.preview.emergentagent.com
 
 ---
 
