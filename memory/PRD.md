@@ -51,6 +51,14 @@ Sistema completo de gestão para clínicas estéticas com módulos de Estoque, A
 
 ## Tarefas Concluídas
 
+### 2026-04-05 — Drag-and-drop para reordenar seções do menu
+- `Layout.js`: Seções do sidebar (Estoque, Agenda, CRM, Financeiro) são reordenáveis via drag-and-drop com HTML5 Drag API nativa
+- Ícone grip `GripVertical` visível à esquerda de cada seção, cursor muda para `grab`/`grabbing`
+- Visual feedback: seção arrastada fica opaca, destino fica com borda primária
+- Ordem salva em `localStorage` (`sidebar-section-order`) e restaurada automaticamente no reload
+- Seção Administração permanece fixa no grupo "SISTEMA" (não draggable)
+- Testes: **100% frontend** ✅
+
 ### 2026-04-05 — Sidebar maior + Responsividade completa
 - **Layout.js** completamente reescrito com 3 breakpoints:
   - **Desktop (lg 1024px+)**: Sidebar 280px com logo, labels de seção "MÓDULOS"/"SISTEMA", ícones com fundo em badge, animação accordion suave (max-h transition), card de usuário expandido com badge Admin, botão Sair com label
