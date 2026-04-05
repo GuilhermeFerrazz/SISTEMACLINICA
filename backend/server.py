@@ -116,7 +116,7 @@ def build_whatsapp_url(phone: str, message: str) -> str:
 
 # Auth Helpers
 def get_jwt_secret() -> str:
-    return os.environ.get("JWT_SECRET", "clinica-secret-key-default-change-me")
+    return os.environ.get("JWT_SECRET")
 
 def create_refresh_token(user_id: str, email: str) -> str:
     payload = {"sub": user_id, "email": email, "exp": datetime.now(timezone.utc) + timedelta(days=7), "type": "refresh"}
