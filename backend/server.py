@@ -37,11 +37,12 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 # ==================== CONFIGURAÇÃO CLOUDFLARE R2 ====================
-R2_ENDPOINT_URL = os.environ.get("R2_ENDPOINT_URL", "https://5fbe1d5a07ab033b3fa3ea66cea56ef5.r2.cloudflarestorage.com")
-R2_ACCESS_KEY = os.environ.get("R2_ACCESS_KEY", "25c9bacc4f1eeb0ed2b8faa577eb5dfb")
-R2_SECRET_KEY = os.environ.get("R2_SECRET_KEY", "14075a2e03363648f4208d2044c68165c35bf54c39083670fa6cddc5fceb24cb")
-R2_BUCKET_NAME = os.environ.get("R2_BUCKET_NAME", "sistemaclinica-storage")
-R2_PUBLIC_URL = os.environ.get("R2_PUBLIC_URL", "https://pub-0b5fb56a119c4cb89149ab672664d1f9.r2.dev")
+# ✅ CORRIGIDO: Removidos os valores hardcoded. Credenciais vêm APENAS do .env ou variáveis de ambiente.
+R2_ENDPOINT_URL = os.environ.get("R2_ENDPOINT_URL", "")
+R2_ACCESS_KEY   = os.environ.get("R2_ACCESS_KEY", "")
+R2_SECRET_KEY   = os.environ.get("R2_SECRET_KEY", "")
+R2_BUCKET_NAME  = os.environ.get("R2_BUCKET_NAME", "sistemaclinica-storage")
+R2_PUBLIC_URL   = os.environ.get("R2_PUBLIC_URL", "")
 
 try:
     s3_client = boto3.client(
@@ -94,15 +95,20 @@ JWT_ALGORITHM = "HS256"
 # WhatsApp Helper — Garante encoding UTF-8 para emojis
 def build_whatsapp_url(phone: str, message: str) -> str:
     """Gera URL do WhatsApp com encoding UTF-8 explícito para suportar emojis."""
-    # Garante que a mensagem é codificada como UTF-8 antes do percent-encoding
     encoded_text = quote(message.encode('utf-8'), safe=b'')
     if phone:
         return f"https://wa.me/{phone}?text={encoded_text}"
     return f"https://wa.me/?text={encoded_text}"
 
 # Auth Helpers
+# ✅ CORRIGIDO: JWT_SECRET sem fallback fraco. Levanta erro claro se não estiver configurado.
 def get_jwt_secret() -> str:
-    return os.environ.get("JWT_SECRET", "clinica-secret-key-default-change-me")
+    secret = os.environ.get("JWT_SECRET")
+    if not secret:
+        raise RuntimeError(
+            "❌ JWT_SECRET não definida! Configure esta variável de ambiente antes de iniciar o servidor."
+        )
+    return secret
 
 def create_refresh_token(user_id: str, email: str) -> str:
     payload = {"sub": user_id, "email": email, "exp": datetime.now(timezone.utc) + timedelta(days=7), "type": "refresh"}
@@ -143,7 +149,6 @@ async def get_birthday_alerts():
         if p.get("birth_date"):
             try:
                 birth = datetime.strptime(p["birth_date"], "%Y-%m-%d").date()
-                # Tenta aniversário esse ano, se já passou tenta ano seguinte
                 bday = birth.replace(year=today.year)
                 if bday < today:
                     bday = birth.replace(year=today.year + 1)
@@ -161,13 +166,11 @@ async def get_birthday_alerts():
 async def get_botox_alerts():
     today = datetime.now(timezone.utc).date()
     limit_date = (datetime.now(timezone.utc) - timedelta(days=140)).strftime("%Y-%m-%d")
-    # Busca último agendamento de botox por paciente
     appointments = await db.appointments.find(
         {"procedure_name": {"$regex": "botox|toxina", "$options": "i"},
          "status": {"$ne": "cancelled"}},
         {"_id": 0}
     ).sort("date", -1).to_list(5000)
-    # Agrupa por paciente, pega o mais recente
     seen = {}
     for apt in appointments:
         pid = apt.get("patient_id")
@@ -201,11 +204,9 @@ async def get_inactive_alerts():
             {"patient_id": pid, "status": {"$ne": "cancelled"}},
             {"_id": 0}
         )
-        # Pegar o mais recente manualmente se necessário
         if not last_app:
             last_app = None
         else:
-            # Busca o mais recente (find_one não garante ordem no motor)
             all_apps = await db.appointments.find(
                 {"patient_id": pid, "status": {"$ne": "cancelled"}},
                 {"_id": 0}
@@ -223,7 +224,6 @@ async def get_inactive_alerts():
             except Exception:
                 pass
         else:
-            # Nunca teve agendamento
             try:
                 created = datetime.fromisoformat(p.get("created_at", datetime.now(timezone.utc).isoformat()).replace("Z", "+00:00")).date()
                 days_inactive = (today - created).days
@@ -274,6 +274,7 @@ async def create_transaction(request: Request, current_user: dict = Depends(get_
     transaction["created_at"] = datetime.now(timezone.utc).isoformat()
     transaction["created_by"] = current_user.get("name")
     await db.transactions.insert_one(transaction)
+    transaction.pop("_id", None)
     return transaction
 
 @api_router.get("/finance/transactions")
@@ -291,10 +292,8 @@ async def get_monthly_evolution(current_user: dict = Depends(get_current_user)):
     now = datetime.now(timezone.utc)
     months = []
     for i in range(5, -1, -1):
-        # Calcula o mês correspondente
         month_date = (now.replace(day=1) - timedelta(days=i * 28)).replace(day=1)
         month_start = month_date.strftime("%Y-%m-%d")
-        # Próximo mês
         if month_date.month == 12:
             next_month = month_date.replace(year=month_date.year + 1, month=1, day=1)
         else:
@@ -369,14 +368,11 @@ async def export_finance_pdf(current_user: dict = Depends(get_current_user)):
     first_day = now.replace(day=1).strftime("%Y-%m-%d")
     month_label = now.strftime("%B/%Y").capitalize()
 
-    # ---- Coleta de dados ----
-    # Sumário do mês
     txs_month = await db.transactions.find({"date": {"$gte": first_day}}, {"_id": 0}).to_list(5000)
     income = sum(t.get("amount", 0) for t in txs_month if t.get("type") == "income")
     expense = sum(t.get("amount", 0) for t in txs_month if t.get("type") == "expense")
     profit = income - expense
 
-    # Evolução mensal (6 meses)
     monthly_data = []
     for i in range(5, -1, -1):
         md = (now.replace(day=1) - timedelta(days=i * 28)).replace(day=1)
@@ -390,7 +386,6 @@ async def export_finance_pdf(current_user: dict = Depends(get_current_user)):
         exp_m = sum(t.get("amount", 0) for t in txs_m if t.get("type") == "expense")
         monthly_data.append((md.strftime("%b/%Y"), inc_m, exp_m, inc_m - exp_m))
 
-    # Por categoria
     categories: dict = {}
     for t in txs_month:
         cat = t.get("category", "Outros")
@@ -401,21 +396,17 @@ async def export_finance_pdf(current_user: dict = Depends(get_current_user)):
         else:
             categories[cat]["expense"] += t.get("amount", 0)
 
-    # Por pagamento
     methods: dict = {}
     for t in txs_month:
         if t.get("type") == "income":
             m = t.get("payment_method", "Outros")
             methods[m] = methods.get(m, 0) + t.get("amount", 0)
 
-    # Últimas transações (até 30)
     all_txs = await db.transactions.find({}, {"_id": 0}).sort("date", -1).to_list(30)
 
-    # ---- Helpers ----
     def brl(v):
         return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-    # ---- Construção do PDF ----
     buf = BytesIO()
     doc_pdf = SimpleDocTemplate(
         buf, pagesize=A4,
@@ -459,11 +450,9 @@ async def export_finance_pdf(current_user: dict = Depends(get_current_user)):
 
     story = []
 
-    # --- Cabeçalho ---
     story.append(Paragraph("Relatório Financeiro", title_style))
     story.append(Paragraph(f"Gerado em {now.strftime('%d/%m/%Y às %H:%M')} • Referência: {month_label}", sub_style))
 
-    # --- KPIs ---
     story.append(Paragraph("Resumo do Mês Atual", section_style))
     kpi_data = [
         ["Indicador", "Valor"],
@@ -474,7 +463,6 @@ async def export_finance_pdf(current_user: dict = Depends(get_current_user)):
     story.append(make_table(kpi_data, [doc_pdf.width * 0.6, doc_pdf.width * 0.4]))
     story.append(Spacer(1, 8))
 
-    # --- Evolução Mensal ---
     story.append(Paragraph("Evolução Mensal (últimos 6 meses)", section_style))
     ev_data = [["Mês", "Entradas", "Saídas", "Lucro"]]
     for row in monthly_data:
@@ -483,7 +471,6 @@ async def export_finance_pdf(current_user: dict = Depends(get_current_user)):
     story.append(make_table(ev_data, [w4, w4, w4, w4]))
     story.append(Spacer(1, 8))
 
-    # --- Por Categoria ---
     story.append(Paragraph("Movimentações por Categoria (mês atual)", section_style))
     cat_data = [["Categoria", "Entradas", "Saídas"]]
     for cat, v in categories.items():
@@ -494,7 +481,6 @@ async def export_finance_pdf(current_user: dict = Depends(get_current_user)):
     story.append(make_table(cat_data, [w3, w3, w3]))
     story.append(Spacer(1, 8))
 
-    # --- Por Forma de Pagamento ---
     story.append(Paragraph("Entradas por Forma de Pagamento (mês atual)", section_style))
     pay_data = [["Forma de Pagamento", "Total"]]
     for method, total in methods.items():
@@ -504,7 +490,6 @@ async def export_finance_pdf(current_user: dict = Depends(get_current_user)):
     story.append(make_table(pay_data, [doc_pdf.width * 0.6, doc_pdf.width * 0.4]))
     story.append(Spacer(1, 8))
 
-    # --- Últimas Transações ---
     story.append(Paragraph("Últimas Transações (até 30)", section_style))
     tx_header = ["Data", "Descrição", "Categoria", "Pagamento", "Tipo", "Valor"]
     tx_rows = [tx_header]
@@ -543,6 +528,7 @@ async def create_patient(patient: dict, current_user: dict = Depends(get_current
     patient["consent_signed"] = False
     patient["created_at"] = datetime.now(timezone.utc).isoformat()
     await db.patients.insert_one(patient)
+    patient.pop("_id", None)  # ✅ CORRIGIDO: Remove ObjectId antes de retornar
     return patient
 
 @api_router.put("/patients/{id}")
@@ -558,7 +544,6 @@ async def delete_patient(id: str, current_user: dict = Depends(get_current_user)
 
 @api_router.post("/medical-records")
 async def create_medical_record(record: dict, current_user: dict = Depends(get_current_user)):
-    # Upload das fotos para o Cloudflare R2 antes de salvar
     pb = [upload_to_r2(p, "prontuarios") for p in record.get("photos_before", [])]
     pa = [upload_to_r2(p, "prontuarios") for p in record.get("photos_after", [])]
     
@@ -571,6 +556,7 @@ async def create_medical_record(record: dict, current_user: dict = Depends(get_c
         "created_by": current_user.get("name")
     }
     await db.medical_records.insert_one(doc)
+    doc.pop("_id", None)
     return doc
 
 @api_router.get("/medical-records/patient/{patient_id}")
@@ -586,7 +572,6 @@ async def get_appointments(date: Optional[str] = None, current_user: dict = Depe
 
 @api_router.post("/appointments")
 async def create_appointment(appo: dict, current_user: dict = Depends(get_current_user)):
-    # Enriquecer com dados do paciente e procedimento
     patient = await db.patients.find_one({"id": appo.get("patient_id")}, {"_id": 0})
     procedure = await db.procedures.find_one({"id": appo.get("procedure_id")}, {"_id": 0})
     if not patient:
@@ -611,6 +596,66 @@ async def update_appointment(id: str, request: Request, current_user: dict = Dep
     await db.appointments.update_one({"id": id}, {"$set": data})
     return {"message": "Agendamento atualizado"}
 
+# ✅ CORRIGIDO: /appointments/summary registrada ANTES de /appointments/{appointment_id}
+@api_router.get("/appointments/summary")
+async def get_daily_summary(date: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    if not date:
+        date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    appointments = await db.appointments.find({"date": date, "status": {"$ne": "cancelled"}}, {"_id": 0}).to_list(100)
+    procedure_summary = {}
+    for apt in appointments:
+        proc = apt.get("procedure_name", "Outros")
+        procedure_summary[proc] = procedure_summary.get(proc, 0) + 1
+    return {
+        "date": date,
+        "total_appointments": len(appointments),
+        "appointments": appointments,
+        "procedure_summary": procedure_summary,
+        "products_needed": [],
+        "stock_alerts": [],
+        "has_stock_issues": False
+    }
+
+@api_router.get("/appointments/{appointment_id}/whatsapp")
+async def get_whatsapp_link(appointment_id: str, template_id: str = "", message_type: str = "confirmation", current_user: dict = Depends(get_current_user)):
+    apt = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+    if not apt:
+        raise HTTPException(status_code=404, detail="Agendamento não encontrado")
+    settings = await db.settings.find_one({"type": "clinic"}, {"_id": 0})
+    clinic_name = settings.get("clinic_name", "Nossa Clínica") if settings else "Nossa Clínica"
+    phone = apt.get("patient_phone", "").replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+    if phone and not phone.startswith("55"):
+        phone = "55" + phone
+    date_fmt = datetime.strptime(apt["date"], "%Y-%m-%d").strftime("%d/%m/%Y")
+    
+    if template_id:
+        template = await db.message_templates.find_one({"id": template_id}, {"_id": 0})
+        if template and template.get("message"):
+            message = template["message"]
+            message = message.replace("{nome}", apt.get("patient_name", ""))
+            message = message.replace("{data}", date_fmt)
+            message = message.replace("{horario}", apt.get("time", ""))
+            message = message.replace("{procedimento}", apt.get("procedure_name", ""))
+            message = message.replace("{clinica}", clinic_name)
+        else:
+            message = f"Olá {apt.get('patient_name', '')}! Confirmamos seu agendamento na {clinic_name}: {date_fmt} às {apt.get('time', '')} - {apt.get('procedure_name', '')}."
+    else:
+        message = f"Olá {apt.get('patient_name', '')}! Confirmamos seu agendamento na {clinic_name}: {date_fmt} às {apt.get('time', '')} - {apt.get('procedure_name', '')}."
+    
+    whatsapp_url = build_whatsapp_url(phone, message)
+    return {"whatsapp_url": whatsapp_url, "phone": phone, "message": message}
+
+
+@api_router.post("/appointments/{appointment_id}/complete")
+async def complete_appointment(appointment_id: str, current_user: dict = Depends(get_current_user)):
+    await db.appointments.update_one({"id": appointment_id}, {"$set": {"status": "completed"}})
+    return {"message": "Atendimento concluído"}
+
+@api_router.delete("/appointments/{appointment_id}")
+async def delete_appointment(appointment_id: str, current_user: dict = Depends(get_current_user)):
+    await db.appointments.delete_one({"id": appointment_id})
+    return {"message": "Agendamento excluído"}
+
 @api_router.get("/procedures")
 async def get_procedures(current_user: dict = Depends(get_current_user)):
     return await db.procedures.find({}, {"_id": 0}).sort("name", 1).to_list(200)
@@ -619,6 +664,7 @@ async def get_procedures(current_user: dict = Depends(get_current_user)):
 async def create_procedure(proc: dict, current_user: dict = Depends(get_current_user)):
     proc["id"] = str(uuid.uuid4())
     await db.procedures.insert_one(proc)
+    proc.pop("_id", None)  # ✅ CORRIGIDO: Remove ObjectId antes de retornar
     return proc
 
 # ==================== ESTOQUE (QR CODE) ====================
@@ -634,6 +680,7 @@ async def create_product(product: dict, current_user: dict = Depends(get_current
     product["qr_code_id"] = str(uuid.uuid4())
     product["created_at"] = datetime.now(timezone.utc).isoformat()
     await db.products.insert_one(product)
+    product.pop("_id", None)
     return product
 
 @api_router.get("/qr/generate/{code}")
@@ -869,66 +916,18 @@ async def upload_logo(request: Request, current_user: dict = Depends(get_current
     await db.settings.update_one({"type": "clinic"}, {"$set": {"logo_url": logo_data}}, upsert=True)
     return {"message": "Logo atualizado"}
 
-# --- Appointments Summary & extras ---
-@api_router.get("/appointments/summary")
-async def get_daily_summary(date: Optional[str] = None, current_user: dict = Depends(get_current_user)):
-    if not date:
-        date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    appointments = await db.appointments.find({"date": date, "status": {"$ne": "cancelled"}}, {"_id": 0}).to_list(100)
-    procedure_summary = {}
-    for apt in appointments:
-        proc = apt.get("procedure_name", "Outros")
-        procedure_summary[proc] = procedure_summary.get(proc, 0) + 1
+# ✅ CORRIGIDO: /patients/alerts/all movida para ANTES de /patients/{patient_id}
+@api_router.get("/patients/alerts/all")
+async def get_all_alerts(current_user: dict = Depends(get_current_user)):
+    birthdays = await get_birthday_alerts()
+    botox = await get_botox_alerts()
+    inactive = await get_inactive_alerts()
     return {
-        "date": date,
-        "total_appointments": len(appointments),
-        "appointments": appointments,
-        "procedure_summary": procedure_summary,
-        "products_needed": [],
-        "stock_alerts": [],
-        "has_stock_issues": False
+        "birthdays": birthdays,
+        "botox_returns": botox,
+        "inactive_patients": inactive,
+        "total_alerts": len(birthdays) + len(botox) + len(inactive)
     }
-
-@api_router.get("/appointments/{appointment_id}/whatsapp")
-async def get_whatsapp_link(appointment_id: str, template_id: str = "", message_type: str = "confirmation", current_user: dict = Depends(get_current_user)):
-    apt = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
-    if not apt:
-        raise HTTPException(status_code=404, detail="Agendamento não encontrado")
-    settings = await db.settings.find_one({"type": "clinic"}, {"_id": 0})
-    clinic_name = settings.get("clinic_name", "Nossa Clínica") if settings else "Nossa Clínica"
-    phone = apt.get("patient_phone", "").replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
-    if phone and not phone.startswith("55"):
-        phone = "55" + phone
-    date_fmt = datetime.strptime(apt["date"], "%Y-%m-%d").strftime("%d/%m/%Y")
-    
-    # Buscar template do banco de dados se template_id fornecido
-    if template_id:
-        template = await db.message_templates.find_one({"id": template_id}, {"_id": 0})
-        if template and template.get("message"):
-            message = template["message"]
-            message = message.replace("{nome}", apt.get("patient_name", ""))
-            message = message.replace("{data}", date_fmt)
-            message = message.replace("{horario}", apt.get("time", ""))
-            message = message.replace("{procedimento}", apt.get("procedure_name", ""))
-            message = message.replace("{clinica}", clinic_name)
-        else:
-            message = f"Olá {apt.get('patient_name', '')}! Confirmamos seu agendamento na {clinic_name}: {date_fmt} às {apt.get('time', '')} - {apt.get('procedure_name', '')}."
-    else:
-        message = f"Olá {apt.get('patient_name', '')}! Confirmamos seu agendamento na {clinic_name}: {date_fmt} às {apt.get('time', '')} - {apt.get('procedure_name', '')}."
-    
-    whatsapp_url = build_whatsapp_url(phone, message)
-    return {"whatsapp_url": whatsapp_url, "phone": phone, "message": message}
-
-
-@api_router.post("/appointments/{appointment_id}/complete")
-async def complete_appointment(appointment_id: str, current_user: dict = Depends(get_current_user)):
-    await db.appointments.update_one({"id": appointment_id}, {"$set": {"status": "completed"}})
-    return {"message": "Atendimento concluído"}
-
-@api_router.delete("/appointments/{appointment_id}")
-async def delete_appointment(appointment_id: str, current_user: dict = Depends(get_current_user)):
-    await db.appointments.delete_one({"id": appointment_id})
-    return {"message": "Agendamento excluído"}
 
 # --- Patients extras ---
 @api_router.get("/patients/{patient_id}")
@@ -978,19 +977,6 @@ async def get_patient_whatsapp(patient_id: str, message_type: str, current_user:
     if not phone.startswith("55"):
         phone = "55" + phone
     return {"whatsapp_url": build_whatsapp_url(phone, message), "phone": phone, "message": message}
-
-# --- Alerts all (Dashboard Pacientes) ---
-@api_router.get("/patients/alerts/all")
-async def get_all_alerts(current_user: dict = Depends(get_current_user)):
-    birthdays = await get_birthday_alerts()
-    botox = await get_botox_alerts()
-    inactive = await get_inactive_alerts()
-    return {
-        "birthdays": birthdays,
-        "botox_returns": botox,
-        "inactive_patients": inactive,
-        "total_alerts": len(birthdays) + len(botox) + len(inactive)
-    }
 
 @api_router.get("/dashboard/patients")
 async def get_patients_dashboard(current_user: dict = Depends(get_current_user)):
@@ -1111,6 +1097,8 @@ async def sign_consent_public(token: str, request: Request):
     consent = await db.consents.find_one({"token": token})
     if not consent:
         raise HTTPException(status_code=404, detail="Link inválido")
+    # ✅ CORRIGIDO: user_agent lido do header real, não do corpo da requisição
+    user_agent = request.headers.get("user-agent", "")
     await db.consents.update_one({"token": token}, {"$set": {
         "status": "signed",
         "signed_at": datetime.now(timezone.utc).isoformat(),
@@ -1118,7 +1106,7 @@ async def sign_consent_public(token: str, request: Request):
         "signature_image": data.get("signature_image"),
         "latitude": data.get("latitude"),
         "longitude": data.get("longitude"),
-        "user_agent": data.get("user_agent")
+        "user_agent": user_agent
     }})
     await db.patients.update_one({"id": consent.get("patient_id")}, {"$set": {
         "consent_signed": True,
@@ -1139,21 +1127,16 @@ async def generate_consent_link(request: Request, current_user: dict = Depends(g
         raise HTTPException(status_code=404, detail="Paciente não encontrado")
     procedure = await db.procedures.find_one({"id": data.get("procedure_id")}, {"_id": 0})
 
-    # Pega configurações da clínica para montar mensagem personalizada
     settings = await db.settings.find_one({"type": "clinic"}, {"_id": 0})
     clinic_name = settings.get("clinic_name", "Nossa Clínica") if settings else "Nossa Clínica"
     procedure_name = procedure.get("name") if procedure else data.get("procedure_name", "Procedimento")
 
-    # URL pública do sistema onde o paciente vai assinar
     base_url = os.environ.get("FRONTEND_URL", "https://app.drguilhermeferraz.com")
     signing_link = f"{base_url}/assinar/{token}"
 
-    # Mensagem WhatsApp — usa o template configurado no CRM
     patient_name = patient.get("name", "")
-    # Busca template do tipo consent_link (configuravel pelo usuario no CRM > Configuracoes)
     tmpl = await db.message_templates.find_one({"type": "consent_link", "active": True}, {"_id": 0})
     if not tmpl:
-        # Fallback: cria template padrao se nao existir
         default_tmpl_msg = (
             "Ola {nome}! Tudo bem?\n\n"
             "Informamos que o documento Termo de Consentimento "
@@ -1173,7 +1156,6 @@ async def generate_consent_link(request: Request, current_user: dict = Depends(g
         tmpl_message = default_tmpl_msg
     else:
         tmpl_message = tmpl.get("message", "")
-    # Substitui os placeholders do template
     message = (tmpl_message
         .replace("{nome}", patient_name)
         .replace("{procedimento}", procedure_name)
@@ -1181,7 +1163,6 @@ async def generate_consent_link(request: Request, current_user: dict = Depends(g
         .replace("{clinica}", clinic_name)
     )
 
-    # Formata o telefone do paciente
     phone = patient.get("phone", "").replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
     if phone and not phone.startswith("55"):
         phone = "55" + phone
@@ -1236,12 +1217,11 @@ async def get_consent_pdf(token: str):
     return StreamingResponse(buf, media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename=consentimento_{token[:8]}.pdf"})
 
-# Inclusão de Rotas (CORS já adicionado antes, acima)
+# Inclusão de Rotas
 app.include_router(api_router)
 
 @app.on_event("startup")
 async def startup_event():
-    # Índices com try/except para evitar conflito com índices já existentes no MongoDB
     for coro in [
         db.users.create_index("email", unique=True),
         db.products.create_index("qr_code_id", unique=True),
@@ -1253,11 +1233,19 @@ async def startup_event():
             await coro
         except Exception:
             pass
-    # Garantir admin master
-    master_email = os.environ.get("ADMIN_EMAIL", "guilhermeferraz1112@gmail.com")
-    master_password = os.environ.get("ADMIN_PASSWORD", "%782870899gG%Sistema")
+
+    # ✅ CORRIGIDO: Admin master só é criado/atualizado se as variáveis estiverem definidas.
+    # A senha NÃO é re-hasheada a cada restart — só atualiza role e active se o usuário já existir.
+    master_email = os.environ.get("ADMIN_EMAIL")
+    master_password = os.environ.get("ADMIN_PASSWORD")
+
+    if not master_email or not master_password:
+        print("⚠️  ADMIN_EMAIL ou ADMIN_PASSWORD não definidos. Admin master ignorado.")
+        return
+
     existing = await db.users.find_one({"email": master_email})
     if not existing:
+        # Primeira vez: cria o admin com senha hasheada
         await db.users.insert_one({
             "email": master_email,
             "password_hash": hash_password(master_password),
@@ -1266,7 +1254,9 @@ async def startup_event():
             "active": True,
             "created_at": datetime.now(timezone.utc).isoformat()
         })
+        print(f"✅ Admin master criado: {master_email}")
     else:
+        # Já existe: apenas garante role=admin e active=True, SEM re-hashear a senha
         await db.users.update_one({"email": master_email}, {
-            "$set": {"password_hash": hash_password(master_password), "role": "admin", "active": True}
+            "$set": {"role": "admin", "active": True}
         })
