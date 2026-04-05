@@ -91,34 +91,119 @@ app.add_middleware(
 api_router = APIRouter(prefix="/api")
 JWT_ALGORITHM = "HS256"
 
-# WhatsApp Helper — Garante encoding UTF-8 para emojis
+# ==============================================================================
+# WHATSAPP — Encoding robusto de emojis
+# ==============================================================================
+#
+# PROBLEMA: emojis (caracteres U+1F000+) armazenados no MongoDB Atlas às vezes
+# retornam ao Python como U+FFFD (caracter de substituição "◆/\uFFFD") por causa
+# da forma como o BSON codifica/decodifica caracteres fora do BMP (> U+FFFF).
+# Isso acontece mesmo que o dado pareça correto no UI (JavaScript lida de forma
+# diferente). Como não é possível recuperar o emoji original a partir de U+FFFD,
+# a solução definitiva é manter os templates padrão DIRETAMENTE no código Python
+# usando \UXXXXXXXX (Unicode escape), que é imune a qualquer problema de encoding
+# de arquivo ou ambiente. O template do banco é usado quando não está corrompido.
+#
+# ==============================================================================
+
+# Templates padrão com emojis definidos por codepoint Unicode (nunca corrompem)
+_DEFAULT_TEMPLATES: dict = {
+    "consent_link": (
+        "Ol\u00e1 {nome}! Tudo bem? \U0001F60A\n\n"
+        "\U0001F4CB Informamos que o documento Termo de Consentimento "
+        "para o procedimento de {procedimento} j\u00e1 est\u00e1 dispon\u00edvel "
+        "para sua assinatura digital.\n\n"
+        "\U0001F517 Para visualizar e assinar, acesse o link: {link}\n\n"
+        "\u23F3 Aten\u00e7\u00e3o: Por quest\u00f5es de seguran\u00e7a, "
+        "este link expira em 48 horas.\n\n"
+        "Caso tenha qualquer d\u00favida, nossa equipe est\u00e1 pronta para te ajudar! "
+        "\U0001F49B\n\nAtenciosamente,\nEquipe {clinica}."
+    ),
+    "birthday": (
+        "Feliz Anivers\u00e1rio, {nome}! \U0001F382\n\n"
+        "Toda a equipe da cl\u00ednica deseja um dia maravilhoso repleto de alegrias! "
+        "\U0001F60D\n\nConte conosco sempre!"
+    ),
+    "botox_return": (
+        "Ol\u00e1 {nome}! \U0001F44B\n\n"
+        "J\u00e1 faz 5 meses desde sua \u00faltima aplica\u00e7\u00e3o de Botox "
+        "em {ultimo_procedimento}.\n\n"
+        "Que tal agendar seu retorno? Estamos \u00e0 disposi\u00e7\u00e3o! "
+        "\U0001F48C\n\nAguardamos voc\u00ea!"
+    ),
+    "inactive_patient": (
+        "Ol\u00e1 {nome}! \U0001F44B\n\n"
+        "Sentimos sua falta! Seu \u00faltimo procedimento foi em {ultimo_procedimento}.\n\n"
+        "Gostar\u00edamos de saber como voc\u00ea est\u00e1. "
+        "Entre em contato conosco! \U0001F496\n\nEstamos \u00e0 disposi\u00e7\u00e3o!"
+    ),
+    "appointment_confirmation": (
+        "Ol\u00e1 {nome}! \U0001F44B\n\n"
+        "Confirmamos seu agendamento na {clinica}:\n\n"
+        "\U0001F4C5 Data: {data}\n"
+        "\U0001F550 Hor\u00e1rio: {horario}\n"
+        "\U0001F48C Procedimento: {procedimento}\n\n"
+        "Por favor, confirme sua presen\u00e7a respondendo esta mensagem.\n\n"
+        "Aguardamos voc\u00ea! \u2728"
+    ),
+    "appointment_reminder": (
+        "Ol\u00e1 {nome}! \U0001F44B\n\n"
+        "Lembramos que voc\u00ea tem um agendamento amanh\u00e3 na {clinica}:\n\n"
+        "\U0001F4C5 Data: {data}\n"
+        "\U0001F550 Hor\u00e1rio: {horario}\n"
+        "\U0001F48C Procedimento: {procedimento}\n\n"
+        "Confirme sua presen\u00e7a! \U0001F4AB"
+    ),
+}
+
+
+def _get_template_msg(tmpl: dict | None, tmpl_type: str) -> str:
+    """Retorna mensagem do template do banco SE não tiver emojis corrompidos (U+FFFD).
+    Caso contrário usa o default hardcoded com emojis definidos por codepoint."""
+    if tmpl:
+        msg = tmpl.get("message", "")
+        # U+FFFD indica emoji corrompido na leitura do MongoDB — usa default
+        if msg and "\ufffd" not in msg:
+            return msg
+    return _DEFAULT_TEMPLATES.get(tmpl_type, "")
+
+
+def _reconstruct_surrogates(s: str) -> str:
+    """Reconstrói pares substitutos CESU-8 que drivers antigos do MongoDB podem gerar.
+    Ex: U+D83D + U+DE0A (surrogate pair) → U+1F60A (😊)"""
+    out: list[str] = []
+    i = 0
+    while i < len(s):
+        cp = ord(s[i])
+        if 0xD800 <= cp <= 0xDBFF and i + 1 < len(s):  # high surrogate
+            ncp = ord(s[i + 1])
+            if 0xDC00 <= ncp <= 0xDFFF:  # valid low surrogate
+                out.append(chr(0x10000 + (cp - 0xD800) * 0x400 + (ncp - 0xDC00)))
+                i += 2
+                continue
+        out.append(s[i])
+        i += 1
+    return "".join(out)
+
+
 def whatsapp_encode(message: str) -> str:
-    """Encode message for WhatsApp URL preserving emojis correctly.
+    """Gera percent-encoding UTF-8 correto para emojis no link wa.me.
 
-    Converte a string para bytes UTF-8 explicitamente antes do percent-encoding.
-    Isso evita que emojis (caracteres multi-byte como 😊 🎉 💉) sejam corrompidos
-    para U+FFFD (%EF%BF%BD) no link gerado — problema que ocorre quando o quote()
-    do Python recebe uma str em vez de bytes, pois perde o contexto de encoding.
+    Passos:
+    1. Reconstrói pares substitutos CESU-8 (se vieram do MongoDB com driver antigo)
+    2. Codifica para bytes UTF-8 explicitamente
+    3. Aplica percent-encoding byte a byte
 
-    Exemplo:
-        😊  →  UTF-8 bytes: F0 9F 98 8A  →  percent-encoded: %F0%9F%98%8A  ✓
-              (sem esta função: pode virar %EF%BF%BD = caractere de substituição)
+    Resultado: 😊 → %F0%9F%98%8A  (correto)
+    Sem esta função: 😊 pode virar %EF%BF%BD (U+FFFD) dependendo do ambiente.
     """
-    try:
-        # Tenta encoding UTF-8 direto (caminho normal: string sem caracteres problemáticos)
-        encoded_bytes = message.encode('utf-8')
-    except UnicodeEncodeError:
-        # Fallback: remove apenas os caracteres realmente inválidos (surrogates isolados)
-        # sem tocar nos emojis válidos
-        clean = message.encode('utf-8', errors='ignore').decode('utf-8')
-        encoded_bytes = clean.encode('utf-8')
-    return quote(encoded_bytes, safe='')
+    fixed = _reconstruct_surrogates(message)
+    return quote(fixed.encode("utf-8", errors="replace"), safe="")
 
 
 def build_whatsapp_url(phone: str, message: str) -> str:
     """Gera URL wa.me com encoding UTF-8 explícito para suportar emojis."""
-    encoded_text = whatsapp_encode(message)
-    return f"https://wa.me/{phone}?text={encoded_text}"
+    return f"https://wa.me/{phone}?text={whatsapp_encode(message)}"
 
 # Auth Helpers
 def get_jwt_secret() -> str:
@@ -747,7 +832,31 @@ async def get_patient_whatsapp(patient_id: str, message_type: str, current_user:
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente não encontrado")
     template = await db.message_templates.find_one({"type": message_type}, {"_id": 0})
-    message = template["message"].replace("{nome}", patient["name"]) if template else f"Olá {patient['name']}!"
+    # Usa _get_template_msg: se o template do banco tiver emojis corrompidos (U+FFFD),
+    # cai automaticamente para o default hardcoded com emojis corretos.
+    msg_template = _get_template_msg(template, message_type)
+    if msg_template:
+        message = (msg_template
+            .replace("{nome}", patient.get("name", ""))
+            .replace("{clinica}", "Nossa Clínica")
+        )
+        # Substitui {ultimo_procedimento} se existir no template
+        last_apt = await db.appointments.find_one(
+            {"patient_id": patient_id, "status": "completed"},
+            {"_id": 0}
+        )
+        if last_apt:
+            from datetime import datetime as _dt
+            try:
+                last_date = _dt.strptime(last_apt["date"], "%Y-%m-%d").strftime("%d/%m/%Y")
+                last_proc = f"{last_apt.get('procedure_name', '')} ({last_date})"
+            except Exception:
+                last_proc = last_apt.get("procedure_name", "")
+            message = message.replace("{ultimo_procedimento}", last_proc)
+        else:
+            message = message.replace("{ultimo_procedimento}", "N/A")
+    else:
+        message = f"Ol\u00e1 {patient['name']}!"
     phone = patient["phone"].replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
     if not phone.startswith("55"):
         phone = "55" + phone
@@ -924,29 +1033,11 @@ async def generate_consent_link(request: Request, current_user: dict = Depends(g
 
     # Mensagem WhatsApp — usa o template configurado no CRM
     patient_name = patient.get("name", "")
-    # Busca template do tipo consent_link (configuravel pelo usuario no CRM > Configuracoes)
-    tmpl = await db.message_templates.find_one({"type": "consent_link", "active": True}, {"_id": 0})
-    if not tmpl:
-        # Fallback: cria template padrao se nao existir
-        default_tmpl_msg = (
-            "Ola {nome}! Tudo bem?\n\n"
-            "Informamos que o documento Termo de Consentimento "
-            "para o procedimento de {procedimento} ja esta disponivel "
-            "para sua assinatura digital.\n\n"
-            "Para visualizar e assinar, acesse o link: > {link}\n\n"
-            "Atencao: Por questoes de seguranca, este link expira em 48 horas.\n\n"
-            "Caso tenha qualquer duvida, nossa equipe esta pronta para te ajudar!\n\n"
-            "Atenciosamente,\nEquipe {clinica}."
-        )
-        await db.message_templates.update_one(
-            {"id": "consent_link"},
-            {"$set": {"id": "consent_link", "name": "Termo de Consentimento (WhatsApp)",
-                      "type": "consent_link", "active": True, "message": default_tmpl_msg}},
-            upsert=True
-        )
-        tmpl_message = default_tmpl_msg
-    else:
-        tmpl_message = tmpl.get("message", "")
+    # _get_template_msg verifica se o template do banco tem emojis corrompidos (U+FFFD).
+    # Se sim, usa automaticamente o default hardcoded em _DEFAULT_TEMPLATES["consent_link"]
+    # que tem emojis definidos por codepoint Unicode — imunes a qualquer corrupcao de encoding.
+    tmpl = await db.message_templates.find_one({"type": "consent_link"}, {"_id": 0})
+    tmpl_message = _get_template_msg(tmpl, "consent_link")
     # Substitui os placeholders do template
     message = (tmpl_message
         .replace("{nome}", patient_name)
