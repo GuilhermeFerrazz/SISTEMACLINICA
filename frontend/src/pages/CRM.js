@@ -241,10 +241,8 @@ const CRM = () => {
         consent_text: consentText
       }, { withCredentials: true });
 
-      // Monta a URL do WhatsApp no frontend para preservar emojis
-      let phone = (selectedPatient.phone || '').replace(/[\s\-\(\)]/g, '');
-      if (phone && !phone.startsWith('55')) phone = '55' + phone;
-      const whatsappUrl = `https://wa.me/${phone}?text=${encodeURIComponent(data.message)}`;
+      // ✅ Usa a URL gerada pelo backend com encoding UTF-8 correto (suporta emojis)
+      const whatsappUrl = data.whatsapp_url;
       window.open(whatsappUrl, '_blank');
       toast.success('Link de assinatura gerado! Envie pelo WhatsApp.');
       setIsConsentOpen(false);
