@@ -51,6 +51,15 @@ Sistema completo de gestão para clínicas estéticas com módulos de Estoque, A
 
 ## Tarefas Concluídas
 
+### 2026-04-05 — Sidebar maior + Responsividade completa
+- **Layout.js** completamente reescrito com 3 breakpoints:
+  - **Desktop (lg 1024px+)**: Sidebar 280px com logo, labels de seção "MÓDULOS"/"SISTEMA", ícones com fundo em badge, animação accordion suave (max-h transition), card de usuário expandido com badge Admin, botão Sair com label
+  - **Tablet (md 768px-1023px)**: Icon rail de 64px — ícones com tooltip, sem labels, theme toggle e logout no rodapé
+  - **Mobile (<768px)**: Topbar fixa com menu + logo + toggle; drawer deslizante com CSS transform + overlay; bottom nav com 5 itens e highlight animado
+- Navegação fecha drawer automaticamente ao trocar de rota
+- Body scroll travado enquanto drawer aberto
+- Testes: **100% frontend** ✅
+
 ### 2026-04-05 — Cards KPI sóbrios + Redesign PatientsDashboard
 - **Dashboard.js**: Gradientes dos 4 KPI cards substituídos por tons profundos: verde floresta (`emerald-800→teal-700`), azul oceano (`sky-800→cyan-700`), índigo (`indigo-800→violet-700`), borgonha (`rose-800→pink-700`)
 - **PatientsDashboard.js**: Redesign completo com mesmo estilo moderno do Dashboard — 4 KPI cards sóbrios, gráfico de barras de procedimentos (recharts), resumo do mês, abas de alertas modernizadas (Aniversários/Botox/Inativos), lista de pacientes recentes com avatar inicial
