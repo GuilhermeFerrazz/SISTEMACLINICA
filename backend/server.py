@@ -37,11 +37,11 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 # ==================== CONFIGURAÇÃO CLOUDFLARE R2 ====================
-R2_ENDPOINT_URL = os.environ.get("R2_ENDPOINT_URL", "https://5fbe1d5a07ab033b3fa3ea66cea56ef5.r2.cloudflarestorage.com")
-R2_ACCESS_KEY = os.environ.get("R2_ACCESS_KEY", "25c9bacc4f1eeb0ed2b8faa577eb5dfb")
-R2_SECRET_KEY = os.environ.get("R2_SECRET_KEY", "14075a2e03363648f4208d2044c68165c35bf54c39083670fa6cddc5fceb24cb")
-R2_BUCKET_NAME = os.environ.get("R2_BUCKET_NAME", "sistemaclinica-storage")
-R2_PUBLIC_URL = os.environ.get("R2_PUBLIC_URL", "https://pub-0b5fb56a119c4cb89149ab672664d1f9.r2.dev")
+R2_ENDPOINT_URL = os.environ.get("R2_ENDPOINT_URL")
+R2_ACCESS_KEY = os.environ.get("R2_ACCESS_KEY",)
+R2_SECRET_KEY = os.environ.get("R2_SECRET_KEY",)
+R2_BUCKET_NAME = os.environ.get("R2_BUCKET_NAME")
+R2_PUBLIC_URL = os.environ.get("R2_PUBLIC_URL")
 
 try:
     s3_client = boto3.client(
@@ -1096,8 +1096,8 @@ async def startup_event():
         except Exception:
             pass
     # Garantir admin master
-    master_email = os.environ.get("ADMIN_EMAIL", "guilhermeferraz1112@gmail.com")
-    master_password = os.environ.get("ADMIN_PASSWORD", "%782870899gG%Sistema")
+    master_email = os.environ.get("ADMIN_EMAIL")
+    master_password = os.environ.get("ADMIN_PASSWORD")
     existing = await db.users.find_one({"email": master_email})
     if not existing:
         await db.users.insert_one({
