@@ -73,6 +73,7 @@ const CRM = () => {
   useEffect(() => {
     fetchPatients();
     fetchProcedures();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -93,7 +94,7 @@ const CRM = () => {
       const { data } = await axios.get(`${API}/procedures`, { withCredentials: true });
       setProcedures(data);
     } catch (error) {
-      console.error('Error fetching procedures:', error);
+      // (log removido)
     }
   };
 
@@ -102,7 +103,7 @@ const CRM = () => {
       const { data } = await axios.get(`${API}/consent/pending/${patientId}`, { withCredentials: true });
       setConsentLinks(data);
     } catch (error) {
-      console.error('Error fetching consent links:', error);
+      // (log removido)
     }
   };
 
@@ -132,7 +133,7 @@ const CRM = () => {
       setPatients(data);
       setFilteredPatients(data);
     } catch (error) {
-      console.error('Error fetching patients:', error);
+      // (log removido)
       toast.error('Erro ao carregar pacientes');
     } finally {
       setLoading(false);
@@ -144,7 +145,7 @@ const CRM = () => {
       const { data } = await axios.get(`${API}/patients/${patientId}/history`, { withCredentials: true });
       setPatientHistory(data);
     } catch (error) {
-      console.error('Error fetching patient history:', error);
+      // (log removido)
     }
   };
 
@@ -157,7 +158,7 @@ const CRM = () => {
       setFormData({ name: '', phone: '', email: '', cpf: '', birth_date: '', address: '', medical_history: '', allergies: '', notes: '' });
       fetchPatients();
     } catch (error) {
-      console.error('Error creating patient:', error);
+      // (log removido)
       toast.error('Erro ao cadastrar paciente');
     }
   };
@@ -171,7 +172,7 @@ const CRM = () => {
       setIsEditOpen(false);
       fetchPatients();
     } catch (error) {
-      console.error('Error updating patient:', error);
+      // (log removido)
       toast.error('Erro ao atualizar paciente');
     }
   };
@@ -229,21 +230,31 @@ const CRM = () => {
 
   const handleSignConsent = async () => {
     if (!selectedPatient) return;
-    if (!selectedProcedureId && selectedProcedureId !== 'lgpd_geral') {
+    if (!selectedProcedureId) {
       toast.error('Selecione um procedimento para o termo de consentimento');
+      return;
+    }
+    if (!consentText || consentText.trim() === '') {
+      toast.error('O texto do termo de consentimento está vazio');
       return;
     }
     setSendingConsent(true);
     try {
-      const { data } = await axios.post(`${API}/consent/generate-link`, {
+      // Envia o consent_text exibido na tela (já é o do procedimento específico ou LGPD geral)
+      const payload = {
         patient_id: selectedPatient.id,
         procedure_id: selectedProcedureId === 'lgpd_geral' ? '' : selectedProcedureId,
+        procedure_name: selectedProcedureId === 'lgpd_geral'
+          ? 'Termo LGPD Geral'
+          : (procedures.find(p => p.id === selectedProcedureId)?.name || ''),
         consent_text: consentText
-      }, { withCredentials: true });
+      };
+      const { data } = await axios.post(`${API}/consent/generate-link`, payload, { withCredentials: true });
 
-      // ✅ Usa a URL gerada pelo backend com encoding UTF-8 correto (suporta emojis)
-      const whatsappUrl = data.whatsapp_url;
-      window.open(whatsappUrl, '_blank');
+      // Abre WhatsApp com a mensagem do template configurado em CRM > Configurações
+      if (data.whatsapp_url) {
+        window.open(data.whatsapp_url, '_blank');
+      }
       toast.success('Link de assinatura gerado! Envie pelo WhatsApp.');
       setIsConsentOpen(false);
       setSelectedProcedureId('');
@@ -270,9 +281,12 @@ const CRM = () => {
     } else {
       const proc = procedures.find(p => p.id === procedureId);
       if (proc && proc.consent_template) {
+        // Usa o termo específico do procedimento (configurado em CRM > Configurações > Termos)
         setConsentText(proc.consent_template);
       } else {
+        // Procedimento sem termo próprio: avisa e usa LGPD geral como base
         setConsentText(DEFAULT_CONSENT_TEXT);
+        toast.warning('Este procedimento não tem termo específico configurado. Configure em CRM > Configurações > Termos de Consentimento.');
       }
     }
     setIsEditingConsent(false);
@@ -932,6 +946,12 @@ const CRM = () => {
                 <div className="flex items-center justify-between mb-3">
                   <Label className="text-sm font-medium text-muted-foreground">
                     {isEditingConsent ? 'Editando o termo de consentimento' : 'Texto do termo de consentimento'}
+                    {selectedProcedureId && selectedProcedureId !== 'lgpd_geral' && (() => {
+                      const proc = procedures.find(p => p.id === selectedProcedureId);
+                      return proc?.consent_template
+                        ? <span style={{marginLeft: 8, fontSize: 11, background: '#dcfce7', color: '#166534', padding: '2px 8px', borderRadius: 6, fontWeight: 600}}>✓ Termo específico</span>
+                        : <span style={{marginLeft: 8, fontSize: 11, background: '#fef9c3', color: '#854d0e', padding: '2px 8px', borderRadius: 6, fontWeight: 600}}>⚠ Sem termo configurado</span>;
+                    })()}
                   </Label>
                   <Button
                     variant="ghost"
