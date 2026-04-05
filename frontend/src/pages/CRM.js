@@ -133,7 +133,6 @@ const CRM = () => {
       setPatients(data);
       setFilteredPatients(data);
     } catch (error) {
-      // (log removido)
       toast.error('Erro ao carregar pacientes');
     } finally {
       setLoading(false);
@@ -158,7 +157,6 @@ const CRM = () => {
       setFormData({ name: '', phone: '', email: '', cpf: '', birth_date: '', address: '', medical_history: '', allergies: '', notes: '' });
       fetchPatients();
     } catch (error) {
-      // (log removido)
       toast.error('Erro ao cadastrar paciente');
     }
   };
@@ -172,7 +170,6 @@ const CRM = () => {
       setIsEditOpen(false);
       fetchPatients();
     } catch (error) {
-      // (log removido)
       toast.error('Erro ao atualizar paciente');
     }
   };
@@ -228,6 +225,24 @@ const CRM = () => {
     }
   };
 
+  /**
+   * FIX: Reconstrução da URL do WhatsApp no frontend.
+   *
+   * PROBLEMA ANTERIOR: a backend retornava `whatsapp_url` já com percent-encoding
+   * feito em Python — mas emojis armazenados no MongoDB como pares substitutos CESU-8
+   * não eram corretamente reconstruídos antes do encoding, resultando em ◆ (U+FFFD)
+   * no WhatsApp do paciente.
+   *
+   * SOLUÇÃO: usar `data.message` (texto puro) retornado pelo backend e deixar o
+   * JavaScript/browser fazer o encodeURIComponent — que trata Unicode corretamente,
+   * inclusive emojis fora do BMP (U+1F000+).
+   */
+  const buildWhatsAppUrl = (phone, message) => {
+    let cleanPhone = (phone || '').replace(/[\s\-\(\)]/g, '');
+    if (cleanPhone && !cleanPhone.startsWith('55')) cleanPhone = '55' + cleanPhone;
+    return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
+  };
+
   const handleSignConsent = async () => {
     if (!selectedPatient) return;
     if (!selectedProcedureId) {
@@ -240,7 +255,6 @@ const CRM = () => {
     }
     setSendingConsent(true);
     try {
-      // Envia o consent_text exibido na tela (já é o do procedimento específico ou LGPD geral)
       const payload = {
         patient_id: selectedPatient.id,
         procedure_id: selectedProcedureId === 'lgpd_geral' ? '' : selectedProcedureId,
@@ -251,10 +265,17 @@ const CRM = () => {
       };
       const { data } = await axios.post(`${API}/consent/generate-link`, payload, { withCredentials: true });
 
-      // Abre WhatsApp com a mensagem do template configurado em CRM > Configurações
-      if (data.whatsapp_url) {
+      // FIX: Reconstruir URL no frontend usando data.message (texto puro) para evitar
+      // emojis quebrados causados pelo encoding Python/MongoDB no backend.
+      // JavaScript's encodeURIComponent lida corretamente com todos os codepoints Unicode.
+      if (data.message && selectedPatient?.phone) {
+        const waUrl = buildWhatsAppUrl(selectedPatient.phone, data.message);
+        window.open(waUrl, '_blank');
+      } else if (data.whatsapp_url) {
+        // Fallback para URL do backend caso message não esteja disponível
         window.open(data.whatsapp_url, '_blank');
       }
+
       toast.success('Link de assinatura gerado! Envie pelo WhatsApp.');
       setIsConsentOpen(false);
       setSelectedProcedureId('');
@@ -281,10 +302,8 @@ const CRM = () => {
     } else {
       const proc = procedures.find(p => p.id === procedureId);
       if (proc && proc.consent_template) {
-        // Usa o termo específico do procedimento (configurado em CRM > Configurações > Termos)
         setConsentText(proc.consent_template);
       } else {
-        // Procedimento sem termo próprio: avisa e usa LGPD geral como base
         setConsentText(DEFAULT_CONSENT_TEXT);
         toast.warning('Este procedimento não tem termo específico configurado. Configure em CRM > Configurações > Termos de Consentimento.');
       }
