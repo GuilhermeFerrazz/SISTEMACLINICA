@@ -1,36 +1,147 @@
 import React, { useState } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 import {
-  LayoutDashboard, Package, History, BarChart3, QrCode, LogOut,
-  Settings, Calendar, Users, ChevronDown, Box, Gift, Syringe, UserX, ShieldAlert, FileText,
-  DollarSign, TrendingUp // <-- Adicionados ícones financeiros
+  LayoutDashboard, Package, History, BarChart3, QrCode,
+  LogOut, Settings, Calendar, Users, ChevronDown, Box,
+  Gift, Syringe, UserX, ShieldAlert, FileText,
+  DollarSign, TrendingUp, Sun, Moon, Menu, X
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-// 1. Adicionada a constante de rotas financeiras
-const estoqueRoutes = ['/dashboard', '/products', '/movements', '/reports', '/scanner', '/settings'];
-const agendaRoutes = ['/agenda', '/agenda/configuracoes'];
-const crmRoutes = ['/crm', '/dashboard-pacientes', '/crm/aniversarios', '/crm/botox', '/crm/inativos', '/crm/configuracoes', '/prontuario'];
-const financeiroRoutes = ['/financeiro']; // <-- Nova rota
-const adminRoutes = ['/admin', '/admin/users'];
+/* ─── Route groups ───────────────────────────────────── */
+const estoqueRoutes  = ['/dashboard', '/products', '/movements', '/reports', '/scanner', '/settings'];
+const agendaRoutes   = ['/agenda'];
+const crmRoutes      = ['/crm', '/dashboard-pacientes', '/prontuario'];
+const financeiroRoutes = ['/financeiro'];
+const adminRoutes    = ['/admin'];
 
+/* ─── Nav sub-items ──────────────────────────────────── */
+const estoqueSubItems = [
+  { to: '/dashboard',  icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/products',   icon: Package,         label: 'Produtos' },
+  { to: '/movements',  icon: History,         label: 'Movimentações' },
+  { to: '/reports',    icon: BarChart3,        label: 'Relatórios' },
+  { to: '/scanner',    icon: QrCode,           label: 'Scanner QR' },
+  { to: '/settings',   icon: Settings,         label: 'Configurações' },
+];
+const agendaSubItems = [
+  { to: '/agenda',                icon: Calendar,  label: 'Agenda',          exact: true },
+  { to: '/agenda/configuracoes',  icon: Settings,  label: 'Configurações' },
+];
+const crmSubItems = [
+  { to: '/crm',                  icon: Users,          label: 'Pacientes',        exact: true },
+  { to: '/prontuario',           icon: FileText,        label: 'Prontuário' },
+  { to: '/dashboard-pacientes',  icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/crm/aniversarios',     icon: Gift,            label: 'Aniversários',     accent: 'text-pink-400' },
+  { to: '/crm/botox',            icon: Syringe,         label: 'Retorno Botox',    accent: 'text-purple-400' },
+  { to: '/crm/inativos',         icon: UserX,           label: 'Inativos',         accent: 'text-amber-400' },
+  { to: '/crm/configuracoes',    icon: Settings,        label: 'Configurações' },
+];
+const financeiroSubItems = [
+  { to: '/financeiro',             icon: DollarSign,  label: 'Fluxo de Caixa' },
+  { to: '/financeiro/relatorios',  icon: TrendingUp,  label: 'Relatórios' },
+];
+const adminSubItems = [
+  { to: '/admin/users', icon: Users, label: 'Usuários' },
+];
+
+const mobileNavItems = [
+  { to: '/dashboard',  icon: Box,        label: 'Estoque' },
+  { to: '/agenda',     icon: Calendar,   label: 'Agenda' },
+  { to: '/financeiro', icon: DollarSign, label: 'Finanças' },
+  { to: '/crm',        icon: Users,      label: 'CRM' },
+  { to: '/settings',   icon: Settings,   label: 'Config' },
+];
+
+/* ─── Sidebar Section Component ─────────────────────── */
+const SideSection = ({ icon: Icon, label, isActive, isOpen, onToggle, children, testId, accent }) => (
+  <div>
+    <button
+      data-testid={testId}
+      onClick={onToggle}
+      className={`relative w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all duration-200 group
+        ${isActive
+          ? 'bg-primary/10 text-primary font-medium'
+          : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
+        }`}
+    >
+      {isActive && <span className="absolute left-0 top-1/4 bottom-1/4 w-[3px] rounded-r-full bg-primary" />}
+      <div className="flex items-center gap-3">
+        <Icon className={`w-[18px] h-[18px] flex-shrink-0 ${accent || ''} ${isActive ? 'text-primary' : ''}`} />
+        <span className="text-sm">{label}</span>
+      </div>
+      <ChevronDown className={`w-3.5 h-3.5 flex-shrink-0 transition-transform duration-250 ${isOpen ? 'rotate-180' : ''}`} />
+    </button>
+
+    {isOpen && (
+      <div className="mt-1 ml-3 pl-3 border-l border-border/50 space-y-0.5 pb-1">
+        {children}
+      </div>
+    )}
+  </div>
+);
+
+/* ─── Sub-nav link ───────────────────────────────────── */
+const SubLink = ({ to, icon: Icon, label, exact, accent }) => (
+  <NavLink
+    to={to}
+    end={exact}
+    className={({ isActive }) =>
+      `relative flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all duration-200
+      ${isActive
+        ? 'bg-primary/10 text-primary font-medium'
+        : `${accent || 'text-muted-foreground'} hover:bg-secondary/50 hover:text-foreground`
+      }`
+    }
+  >
+    {({ isActive }) => (
+      <>
+        {isActive && <span className="absolute left-0 top-1/4 bottom-1/4 w-[3px] rounded-r-full bg-primary" />}
+        <Icon className={`w-4 h-4 flex-shrink-0 ${accent || ''}`} />
+        <span>{label}</span>
+      </>
+    )}
+  </NavLink>
+);
+
+/* ─── Theme Toggle ───────────────────────────────────── */
+const ThemeToggle = () => {
+  const { theme, toggleTheme } = useTheme();
+  return (
+    <button
+      data-testid="theme-toggle-btn"
+      onClick={toggleTheme}
+      aria-label="Alternar tema"
+      className="w-9 h-9 flex items-center justify-center rounded-xl border border-border bg-secondary/50 hover:bg-secondary text-muted-foreground hover:text-foreground transition-all duration-200 active:scale-95"
+    >
+      {theme === 'dark'
+        ? <Sun  className="w-4 h-4 text-amber-400" />
+        : <Moon className="w-4 h-4" />
+      }
+    </button>
+  );
+};
+
+/* ─── Main Layout ────────────────────────────────────── */
 const Layout = ({ children }) => {
   const { user, logout } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
+  const navigate  = useNavigate();
+  const location  = useLocation();
+  const [mobileOpen, setMobileOpen] = useState(false);
 
-  const isEstoqueActive = estoqueRoutes.some((r) => location.pathname.startsWith(r));
-  const isAgendaActive = agendaRoutes.some((r) => location.pathname === r || location.pathname.startsWith('/agenda'));
-  const isCrmActive = crmRoutes.some((r) => location.pathname === r || location.pathname.startsWith('/crm') || location.pathname.startsWith('/dashboard-pacientes'));
-  const isFinanceiroActive = financeiroRoutes.some((r) => location.pathname.startsWith(r)); // <-- Ativação financeira
-  const isAdminActive = adminRoutes.some((r) => location.pathname.startsWith(r));
+  const isEstoqueActive    = estoqueRoutes.some((r)  => location.pathname.startsWith(r));
+  const isAgendaActive     = location.pathname.startsWith('/agenda');
+  const isCrmActive        = crmRoutes.some((r)      => location.pathname.startsWith(r));
+  const isFinanceiroActive = location.pathname.startsWith('/financeiro');
+  const isAdminActive      = location.pathname.startsWith('/admin');
 
-  const [estoqueOpen, setEstoqueOpen] = useState(isEstoqueActive);
-  const [agendaOpen, setAgendaOpen] = useState(isAgendaActive);
-  const [crmOpen, setCrmOpen] = useState(isCrmActive);
-  const [financeiroOpen, setFinanceiroOpen] = useState(isFinanceiroActive); // <-- Estado do dropdown
-  const [adminOpen, setAdminOpen] = useState(isAdminActive);
+  const [estoqueOpen,    setEstoqueOpen]    = useState(isEstoqueActive);
+  const [agendaOpen,     setAgendaOpen]     = useState(isAgendaActive);
+  const [crmOpen,        setCrmOpen]        = useState(isCrmActive);
+  const [financeiroOpen, setFinanceiroOpen] = useState(isFinanceiroActive);
+  const [adminOpen,      setAdminOpen]      = useState(isAdminActive);
 
   const isAdmin = user?.role === 'admin';
 
@@ -39,227 +150,174 @@ const Layout = ({ children }) => {
     navigate('/login');
   };
 
-  const estoqueSubItems = [
-    { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    { to: '/products', icon: Package, label: 'Produtos' },
-    { to: '/movements', icon: History, label: 'Movimentações' },
-    { to: '/reports', icon: BarChart3, label: 'Relatórios' },
-    { to: '/scanner', icon: QrCode, label: 'Scanner QR' },
-    { to: '/settings', icon: Settings, label: 'Configurações' },
-  ];
+  /* ── Sidebar content (shared between desktop + mobile drawer) ── */
+  const SidebarContent = () => (
+    <div className="flex flex-col h-full">
+      {/* Logo */}
+      <div className="px-5 py-5 flex items-center gap-3">
+        <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center shadow-md flex-shrink-0">
+          <Package className="w-4 h-4 text-primary-foreground" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-foreground leading-tight">Estética</p>
+          <p className="text-[10px] text-muted-foreground">Sistema de Gestão</p>
+        </div>
+      </div>
 
-  const agendaSubItems = [
-    { to: '/agenda', icon: Calendar, label: 'Agenda', exact: true },
-    { to: '/agenda/configuracoes', icon: Settings, label: 'Configurações' },
-  ];
+      <div className="px-3 flex-1 overflow-y-auto space-y-0.5">
+        <SideSection
+          icon={Box} label="Estoque" testId="nav-estoque"
+          isActive={isEstoqueActive} isOpen={estoqueOpen}
+          onToggle={() => setEstoqueOpen(!estoqueOpen)}
+        >
+          {estoqueSubItems.map((i) => <SubLink key={i.to} {...i} />)}
+        </SideSection>
 
-  const crmSubItems = [
-    { to: '/crm', icon: Users, label: 'Pacientes', exact: true },
-    { to: '/prontuario', icon: FileText, label: 'Prontuário' },
-    { to: '/dashboard-pacientes', icon: LayoutDashboard, label: 'Dashboard' },
-    { to: '/crm/aniversarios', icon: Gift, label: 'Aniversários', color: 'text-pink-500' },
-    { to: '/crm/botox', icon: Syringe, label: 'Retorno Botox', color: 'text-purple-500' },
-    { to: '/crm/inativos', icon: UserX, label: 'Pacientes Inativos', color: 'text-amber-500' },
-    { to: '/crm/configuracoes', icon: Settings, label: 'Configurações' },
-  ];
+        <SideSection
+          icon={Calendar} label="Agenda" testId="nav-agenda"
+          isActive={isAgendaActive} isOpen={agendaOpen}
+          onToggle={() => setAgendaOpen(!agendaOpen)}
+        >
+          {agendaSubItems.map((i) => <SubLink key={i.to} {...i} />)}
+        </SideSection>
 
-  // 2. Definidos os sub-itens do financeiro
-  const financeiroSubItems = [
-    { to: '/financeiro', icon: DollarSign, label: 'Fluxo de Caixa' },
-    { to: '/financeiro/relatorios', icon: TrendingUp, label: 'Relatórios' },
-  ];
+        <SideSection
+          icon={Users} label="CRM" testId="nav-crm"
+          isActive={isCrmActive} isOpen={crmOpen}
+          onToggle={() => setCrmOpen(!crmOpen)}
+        >
+          {crmSubItems.map((i) => <SubLink key={i.to} {...i} />)}
+        </SideSection>
 
-  const adminSubItems = [
-    { to: '/admin/users', icon: Users, label: 'Usuários' },
-  ];
+        <SideSection
+          icon={DollarSign} label="Financeiro" testId="nav-financeiro"
+          isActive={isFinanceiroActive} isOpen={financeiroOpen}
+          onToggle={() => setFinanceiroOpen(!financeiroOpen)}
+        >
+          {financeiroSubItems.map((i) => <SubLink key={i.to} {...i} />)}
+        </SideSection>
 
-  // 3. Atualizado o menu mobile (substituí "Config" por "Financeiro" para prioridade)
-  const mobileNavItems = [
-    { to: '/dashboard', icon: Box, label: 'Estoque' },
-    { to: '/agenda', icon: Calendar, label: 'Agenda' },
-    { to: '/financeiro', icon: DollarSign, label: 'Finanças' },
-    { to: '/crm', icon: Users, label: 'CRM' },
-    { to: '/settings', icon: Settings, label: 'Config' },
-  ];
+        {isAdmin && (
+          <SideSection
+            icon={ShieldAlert} label="Administração" testId="nav-admin"
+            isActive={isAdminActive} isOpen={adminOpen}
+            onToggle={() => setAdminOpen(!adminOpen)}
+            accent="text-rose-400"
+          >
+            {adminSubItems.map((i) => <SubLink key={i.to} {...i} />)}
+          </SideSection>
+        )}
+      </div>
+
+      {/* Footer: user + theme toggle */}
+      <div className="px-4 py-4 border-t border-border/60 mt-auto">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
+              <span className="text-xs font-semibold text-primary">
+                {user?.name?.charAt(0)?.toUpperCase() || 'U'}
+              </span>
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-foreground truncate leading-tight">
+                {user?.name}
+                {isAdmin && (
+                  <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-rose-500/15 text-rose-400">Admin</span>
+                )}
+              </p>
+              <p className="text-[10px] text-muted-foreground truncate">{user?.email}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <ThemeToggle />
+            <button
+              data-testid="logout-btn"
+              onClick={handleLogout}
+              aria-label="Sair"
+              className="w-9 h-9 flex items-center justify-center rounded-xl border border-border bg-secondary/50 hover:bg-destructive/10 hover:border-destructive/30 text-muted-foreground hover:text-destructive transition-all duration-200 active:scale-95"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-background flex">
-      {/* Desktop Sidebar */}
-      <aside className="w-64 border-r border-border bg-secondary/30 hidden md:flex md:flex-col md:justify-between fixed inset-y-0 left-0 z-30">
-        <div className="p-6">
-          <div className="flex items-center gap-3 mb-8">
-            <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
-              <Package className="w-5 h-5 text-primary-foreground" />
-            </div>
-            <div>
-              <h1 className="text-xl font-medium text-foreground">Estética</h1>
-              <p className="text-xs text-muted-foreground">Sistema de Gestão</p>
-            </div>
-          </div>
 
-          <nav className="space-y-1">
-            {/* Estoque Section */}
-            <button
-              onClick={() => setEstoqueOpen(!estoqueOpen)}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all duration-200 ${
-                isEstoqueActive ? 'bg-primary/10 text-foreground' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <Box className="w-5 h-5" />
-                <span className="font-medium text-sm">Estoque</span>
-              </div>
-              <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${estoqueOpen ? 'rotate-180' : ''}`} />
-            </button>
-            {estoqueOpen && (
-              <div className="ml-4 pl-3 border-l border-border/60 space-y-1 py-1">
-                {estoqueSubItems.map((item) => (
-                  <NavLink key={item.to} to={item.to} className={({ isActive }) => `flex items-center gap-3 px-3 py-2 rounded-lg text-sm ${isActive ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary'}`}>
-                    <item.icon className="w-4 h-4" />
-                    <span>{item.label}</span>
-                  </NavLink>
-                ))}
-              </div>
-            )}
-
-            {/* Agenda Section */}
-            <button
-              onClick={() => setAgendaOpen(!agendaOpen)}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all duration-200 ${
-                isAgendaActive ? 'bg-primary/10 text-foreground' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <Calendar className="w-5 h-5" />
-                <span className="font-medium text-sm">Agenda</span>
-              </div>
-              <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${agendaOpen ? 'rotate-180' : ''}`} />
-            </button>
-            {agendaOpen && (
-              <div className="ml-4 pl-3 border-l border-border/60 space-y-1 py-1">
-                {agendaSubItems.map((item) => (
-                  <NavLink key={item.to} to={item.to} end={item.exact} className={({ isActive }) => `flex items-center gap-3 px-3 py-2 rounded-lg text-sm ${isActive ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary'}`}>
-                    <item.icon className="w-4 h-4" />
-                    <span>{item.label}</span>
-                  </NavLink>
-                ))}
-              </div>
-            )}
-
-            {/* CRM Section */}
-            <button
-              onClick={() => setCrmOpen(!crmOpen)}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all duration-200 ${
-                isCrmActive ? 'bg-primary/10 text-foreground' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <Users className="w-5 h-5" />
-                <span className="font-medium text-sm">CRM</span>
-              </div>
-              <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${crmOpen ? 'rotate-180' : ''}`} />
-            </button>
-            {crmOpen && (
-              <div className="ml-4 pl-3 border-l border-border/60 space-y-1 py-1">
-                {crmSubItems.map((item) => (
-                  <NavLink key={item.to} to={item.to} end={item.exact} className={({ isActive }) => `flex items-center gap-3 px-3 py-2 rounded-lg text-sm ${isActive ? 'bg-primary text-primary-foreground' : `${item.color || 'text-muted-foreground'} hover:bg-secondary`}`}>
-                    <item.icon className={`w-4 h-4 ${item.color || ''}`} />
-                    <span>{item.label}</span>
-                  </NavLink>
-                ))}
-              </div>
-            )}
-
-            {/* Financeiro Section - NOVO ITEM ADICIONADO AQUI */}
-            <button
-              onClick={() => setFinanceiroOpen(!financeiroOpen)}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all duration-200 ${
-                isFinanceiroActive ? 'bg-primary/10 text-foreground' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <DollarSign className="w-5 h-5" />
-                <span className="font-medium text-sm">Financeiro</span>
-              </div>
-              <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${financeiroOpen ? 'rotate-180' : ''}`} />
-            </button>
-            {financeiroOpen && (
-              <div className="ml-4 pl-3 border-l border-border/60 space-y-1 py-1">
-                {financeiroSubItems.map((item) => (
-                  <NavLink key={item.to} to={item.to} className={({ isActive }) => `flex items-center gap-3 px-3 py-2 rounded-lg text-sm ${isActive ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary'}`}>
-                    <item.icon className="w-4 h-4" />
-                    <span>{item.label}</span>
-                  </NavLink>
-                ))}
-              </div>
-            )}
-
-            {/* Admin Section */}
-            {isAdmin && (
-              <>
-                <button
-                  onClick={() => setAdminOpen(!adminOpen)}
-                  className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all duration-200 ${isAdminActive ? 'bg-red-500/10 text-red-600' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'}`}
-                >
-                  <div className="flex items-center gap-3">
-                    <ShieldAlert className="w-5 h-5 text-red-500" />
-                    <span className="font-medium text-sm">Administração</span>
-                  </div>
-                  <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${adminOpen ? 'rotate-180' : ''}`} />
-                </button>
-                {adminOpen && (
-                  <div className="ml-4 pl-3 border-l border-red-200 space-y-1 py-1">
-                    {adminSubItems.map((item) => (
-                      <NavLink key={item.to} to={item.to} className={({ isActive }) => `flex items-center gap-3 px-3 py-2 rounded-lg text-sm ${isActive ? 'bg-red-500 text-white' : 'text-muted-foreground hover:bg-red-50'}`}>
-                        <item.icon className="w-4 h-4" />
-                        <span>{item.label}</span>
-                      </NavLink>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-          </nav>
-        </div>
-
-        <div className="p-6 border-t border-border">
-          <div className="mb-4">
-            <div className="flex items-center gap-2">
-              <p className="text-sm font-medium text-foreground">{user?.name}</p>
-              {isAdmin && <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-100 text-red-600">Admin</span>}
-            </div>
-            <p className="text-xs text-muted-foreground">{user?.email}</p>
-          </div>
-          <Button onClick={handleLogout} variant="outline" className="w-full justify-start gap-3">
-            <LogOut className="w-4 h-4" />
-            Sair
-          </Button>
-        </div>
+      {/* ── Desktop Sidebar ──────────────────────────────── */}
+      <aside
+        data-testid="desktop-sidebar"
+        className="w-64 hidden md:flex md:flex-col fixed inset-y-0 left-0 z-30 border-r border-border/60 bg-[hsl(var(--sidebar-bg))]"
+        style={{ transition: 'background-color 0.3s ease, border-color 0.3s ease' }}
+      >
+        <SidebarContent />
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-auto md:ml-64 pb-20 md:pb-0">
-        {children}
+      {/* ── Mobile Menu Button ───────────────────────────── */}
+      <button
+        data-testid="mobile-menu-btn"
+        onClick={() => setMobileOpen(true)}
+        className="md:hidden fixed top-4 left-4 z-40 w-10 h-10 flex items-center justify-center rounded-xl bg-card border border-border shadow-md text-foreground"
+      >
+        <Menu className="w-5 h-5" />
+      </button>
+
+      {/* ── Mobile Drawer Overlay ────────────────────────── */}
+      {mobileOpen && (
+        <div
+          className="md:hidden fixed inset-0 z-50 flex"
+          onClick={() => setMobileOpen(false)}
+        >
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          <div
+            className="relative w-72 h-full bg-[hsl(var(--sidebar-bg))] border-r border-border shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setMobileOpen(false)}
+              className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg bg-secondary text-muted-foreground hover:text-foreground"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <SidebarContent />
+          </div>
+        </div>
+      )}
+
+      {/* ── Main Content ─────────────────────────────────── */}
+      <main className="flex-1 md:ml-64 pb-16 md:pb-0 min-h-screen overflow-auto">
+        <div className="page-enter">
+          {children}
+        </div>
       </main>
 
-      {/* Mobile Bottom Navigation */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-card/95 backdrop-blur-lg border-t border-border shadow-[0_-4px_24px_rgba(0,0,0,0.06)]">
-        <div className="flex items-center justify-around px-2 py-2">
+      {/* ── Mobile Bottom Navigation ─────────────────────── */}
+      <nav
+        data-testid="mobile-bottom-nav"
+        className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-card/95 backdrop-blur-xl border-t border-border"
+      >
+        <div className="flex items-center justify-around px-2 py-1.5">
           {mobileNavItems.map((item) => {
             const isActive = location.pathname.startsWith(item.to);
             return (
               <NavLink
                 key={item.to}
                 to={item.to}
-                className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-lg transition-all duration-200 ${isActive ? 'text-primary' : 'text-muted-foreground'}`}
+                data-testid={`mobile-nav-${item.label.toLowerCase()}`}
+                className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl transition-all duration-200
+                  ${isActive ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
               >
-                <item.icon className="w-5 h-5" />
+                <item.icon className={`w-5 h-5 ${isActive ? 'scale-110' : ''} transition-transform duration-200`} />
                 <span className="text-[10px] font-medium">{item.label}</span>
               </NavLink>
             );
           })}
         </div>
       </nav>
+
     </div>
   );
 };
