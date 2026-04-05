@@ -51,6 +51,16 @@ Sistema completo de gestão para clínicas estéticas com módulos de Estoque, A
 
 ## Tarefas Concluídas
 
+### 2026-04-05 — Redesign Dashboard (estilo moderno)
+- `Dashboard.js` completamente reescrito com:
+  - Header "Olá, [Nome]! 👋" com data/dia da semana
+  - 4 KPI cards com gradientes coloridos (teal, laranja, roxo, rosa), decorações geométricas, badge de trend e hover scale
+  - Gráfico de barras (recharts) para movimentações de estoque
+  - Painel lateral financeiro (Entradas/Saídas/Lucro Líquido) com navigate para /financeiro
+  - Tabela de movimentações recentes com linhas zebradas, badges de tipo coloridos e empty states
+- Funciona em dark e light mode automaticamente via CSS variables
+- Testes: 95% frontend ✅
+
 ### 2026-04-05 — Redesign UI + Toggle Tema Claro/Escuro
 - `ThemeContext.js`: contexto global que aplica classe `.dark` ao `<html>` e persiste no localStorage
 - `index.css`: CSS variables completas para `:root` (light) e `.dark` — nova paleta moderna sobre base verde #2d6a4f
