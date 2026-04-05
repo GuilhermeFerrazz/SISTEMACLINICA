@@ -93,7 +93,9 @@ JWT_ALGORITHM = "HS256"
 
 # WhatsApp Helper
 def build_whatsapp_url(phone: str, message: str) -> str:
-    encoded_text = quote(message.encode('utf-8'), safe=b'')
+    # Encoda tudo EXCETO emojis e caracteres especiais Unicode
+    # O WhatsApp aceita emojis diretamente na URL
+    encoded_text = quote(message, safe='', encoding='utf-8')
     if phone:
         return f"https://wa.me/{phone}?text={encoded_text}"
     return f"https://wa.me/?text={encoded_text}"
