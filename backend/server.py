@@ -93,20 +93,32 @@ JWT_ALGORITHM = "HS256"
 
 # WhatsApp Helper — Garante encoding UTF-8 para emojis
 def whatsapp_encode(message: str) -> str:
-    """Encode message for WhatsApp URL preserving emojis correctly."""
-    # Encode explicitly to UTF-8 bytes first, then percent-encode
-    # This prevents emoji corruption (U+FFFD replacement character issue)
-    encoded_bytes = message.encode('utf-8', errors='replace')
-    # quote() on bytes directly ensures proper percent-encoding of multi-byte emoji
+    """Encode message for WhatsApp URL preserving emojis correctly.
+
+    Converte a string para bytes UTF-8 explicitamente antes do percent-encoding.
+    Isso evita que emojis (caracteres multi-byte como 😊 🎉 💉) sejam corrompidos
+    para U+FFFD (%EF%BF%BD) no link gerado — problema que ocorre quando o quote()
+    do Python recebe uma str em vez de bytes, pois perde o contexto de encoding.
+
+    Exemplo:
+        😊  →  UTF-8 bytes: F0 9F 98 8A  →  percent-encoded: %F0%9F%98%8A  ✓
+              (sem esta função: pode virar %EF%BF%BD = caractere de substituição)
+    """
+    try:
+        # Tenta encoding UTF-8 direto (caminho normal: string sem caracteres problemáticos)
+        encoded_bytes = message.encode('utf-8')
+    except UnicodeEncodeError:
+        # Fallback: remove apenas os caracteres realmente inválidos (surrogates isolados)
+        # sem tocar nos emojis válidos
+        clean = message.encode('utf-8', errors='ignore').decode('utf-8')
+        encoded_bytes = clean.encode('utf-8')
     return quote(encoded_bytes, safe='')
 
 
 def build_whatsapp_url(phone: str, message: str) -> str:
-    """Gera URL do WhatsApp com encoding UTF-8 explícito para suportar emojis."""
+    """Gera URL wa.me com encoding UTF-8 explícito para suportar emojis."""
     encoded_text = whatsapp_encode(message)
-    if phone:
-        return f"https://wa.me/{phone}?text={whatsapp_encode(message)}"
-    return f"https://wa.me/{phone}?text={whatsapp_encode(message)}"
+    return f"https://wa.me/{phone}?text={encoded_text}"
 
 # Auth Helpers
 def get_jwt_secret() -> str:
