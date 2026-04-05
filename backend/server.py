@@ -93,17 +93,11 @@ JWT_ALGORITHM = "HS256"
 
 # WhatsApp Helper — Garante encoding UTF-8 para emojis
 def whatsapp_encode(message: str) -> str:
-    """Codifica mensagem para URL do WhatsApp preservando emojis corretamente.
-    
-    Resolve o problema do U+FFFD (Replacement Character) nos emojis:
-    - Codifica explicitamente para bytes UTF-8 antes do percent-encoding
-    - O quote() sobre bytes percorre byte a byte, gerando %F0%9F%99%82
-      em vez de %EF%BF%BD (que aparecia quando o emoji já chegava corrompido)
-    """
-    # encode para bytes UTF-8 explicitamente; errors='replace' evita crash em
-    # casos extremos mas preserva emojis válidos (4 bytes em UTF-8)
+    """Encode message for WhatsApp URL preserving emojis correctly."""
+    # Encode explicitly to UTF-8 bytes first, then percent-encode
+    # This prevents emoji corruption (U+FFFD replacement character issue)
     encoded_bytes = message.encode('utf-8', errors='replace')
-    # safe='' (string vazia) garante que todos os bytes especiais sejam codificados
+    # quote() on bytes directly ensures proper percent-encoding of multi-byte emoji
     return quote(encoded_bytes, safe='')
 
 
@@ -111,8 +105,8 @@ def build_whatsapp_url(phone: str, message: str) -> str:
     """Gera URL do WhatsApp com encoding UTF-8 explícito para suportar emojis."""
     encoded_text = whatsapp_encode(message)
     if phone:
-        return f"https://wa.me/{phone}?text={encoded_text}"
-    return f"https://wa.me/?text={encoded_text}"
+        return f"https://wa.me/{phone}?text={whatsapp_encode(message)}"
+    return f"https://wa.me/{phone}?text={whatsapp_encode(message)}"
 
 # Auth Helpers
 def get_jwt_secret() -> str:
