@@ -51,6 +51,13 @@ Sistema completo de gestão para clínicas estéticas com módulos de Estoque, A
 
 ## Tarefas Concluídas
 
+### 2026-04-05 — Redesign UI + Toggle Tema Claro/Escuro
+- `ThemeContext.js`: contexto global que aplica classe `.dark` ao `<html>` e persiste no localStorage
+- `index.css`: CSS variables completas para `:root` (light) e `.dark` — nova paleta moderna sobre base verde #2d6a4f
+- `Layout.js`: redesign completo da sidebar — indicadores ativos (barra verde esquerda), bordas arredondadas (rounded-xl/2xl), avatar inicial do usuário, botão theme toggle ☀️/🌙 + logout no rodapé, menu mobile drawer, micro-animações
+- `App.js`: envolto em `ThemeProvider`
+- Testes: 100% frontend ✅
+
 ### 2026-04-04 — Exportação de PDF nos Relatórios Financeiros
 - Adicionado botão **"Exportar PDF"** na página `/financeiro/relatorios`
 - Novo endpoint `GET /api/finance/reports/export-pdf` que gera PDF completo com reportlab:
