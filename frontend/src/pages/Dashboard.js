@@ -192,7 +192,7 @@ const Dashboard = () => {
             title="Total de Produtos"
             value={stats?.total_products}
             icon={Package}
-            gradient="bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600"
+            gradient="bg-gradient-to-br from-emerald-800 via-emerald-700 to-teal-700"
             textColor="text-white"
             subLabel="Qtd. total"
             subValue={stats?.total_quantity || 0}
@@ -204,7 +204,7 @@ const Dashboard = () => {
             title="Movimentações"
             value={(stats?.recent_movements || []).length}
             icon={Activity}
-            gradient="bg-gradient-to-br from-amber-400 via-orange-400 to-orange-500"
+            gradient="bg-gradient-to-br from-sky-800 via-sky-700 to-cyan-700"
             textColor="text-white"
             subLabel="Tipo"
             subValue="Recentes"
@@ -216,7 +216,7 @@ const Dashboard = () => {
             title="Próx. Vencimento"
             value={stats?.expiring_count}
             icon={AlertTriangle}
-            gradient="bg-gradient-to-br from-violet-500 via-purple-500 to-fuchsia-600"
+            gradient="bg-gradient-to-br from-indigo-800 via-indigo-700 to-violet-700"
             textColor="text-white"
             subLabel="Prazo"
             subValue="30 dias"
@@ -228,7 +228,7 @@ const Dashboard = () => {
             title="Estoque Baixo"
             value={stats?.low_stock_count}
             icon={TrendingDown}
-            gradient="bg-gradient-to-br from-rose-500 via-pink-500 to-pink-600"
+            gradient="bg-gradient-to-br from-rose-800 via-rose-700 to-pink-700"
             textColor="text-white"
             subLabel="Limite"
             subValue="< 5 unid."
