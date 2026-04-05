@@ -93,9 +93,20 @@ JWT_ALGORITHM = "HS256"
 
 # WhatsApp Helper
 def build_whatsapp_url(phone: str, message: str) -> str:
-    # Encoda tudo EXCETO emojis e caracteres especiais Unicode
-    # O WhatsApp aceita emojis diretamente na URL
-    encoded_text = quote(message, safe='', encoding='utf-8')
+    """Gera URL do WhatsApp preservando emojis e acentos.
+    
+    Encoda apenas caracteres ASCII especiais (espaços, &, =, etc.)
+    mas deixa emojis e letras acentuadas como Unicode puro,
+    pois o WhatsApp exibe corretamente Unicode mas corrompe percent-encoded.
+    """
+    encoded_text = ''
+    for char in message:
+        if ord(char) < 128:
+            # ASCII: encoda normalmente
+            encoded_text += quote(char, safe='')
+        else:
+            # Unicode (emojis, acentos, etc.): passa direto sem encoding
+            encoded_text += char
     if phone:
         return f"https://wa.me/{phone}?text={encoded_text}"
     return f"https://wa.me/?text={encoded_text}"
@@ -637,6 +648,21 @@ async def create_procedure(proc: dict, current_user: dict = Depends(get_current_
     await db.procedures.insert_one(proc)
     proc.pop("_id", None)
     return proc
+
+@api_router.put("/procedures/{procedure_id}")
+async def update_procedure(procedure_id: str, request: Request, current_user: dict = Depends(get_current_user)):
+    data = await request.json()
+    data.pop("_id", None)
+    result = await db.procedures.update_one({"id": procedure_id}, {"$set": data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Procedimento não encontrado")
+    proc = await db.procedures.find_one({"id": procedure_id}, {"_id": 0})
+    return proc
+
+@api_router.delete("/procedures/{procedure_id}")
+async def delete_procedure(procedure_id: str, current_user: dict = Depends(get_current_user)):
+    await db.procedures.delete_one({"id": procedure_id})
+    return {"message": "Procedimento excluído"}
 
 # ==================== ESTOQUE (QR CODE) ====================
 
