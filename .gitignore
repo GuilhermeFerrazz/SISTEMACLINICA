@@ -28,10 +28,12 @@ next-env.d.ts
 # Production builds
 /build
 dist/
-dist
 
-# Environment files (comprehensive coverage)
-
+# Environment files — cobre .env, .env.local, .env.production, backend.env, etc.
+.env
+.env.*
+*.env
+*.env.*
 *token.json*
 *credentials.json*
 
@@ -48,7 +50,7 @@ dump.rdb
 
 # Python
 __pycache__/
-*pyc*
+*.pyc
 venv/
 .venv/
 
@@ -76,39 +78,8 @@ agenthub/agents/youtube/db
 # Build caches
 .cache/
 
+# Sensitive docs
 memory/test_credentials.md
 
-# Mobile development
-android-sdk/frontend/node_modules/.cache/default-development/0.pack
-frontend/node_modules/.cache/default-development/2.pack_
-frontend/node_modules/.cache/default-development/1.pack
-frontend/node_modules/.cache/default-development/0.pack
-frontend/node_modules/.cache/default-development/2.pack
-frontend/node_modules/.cache/default-development/5.pack
-frontend/node_modules/.cache/default-development/6.pack
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
-frontend/node_modules/.cache/default-development/4.pack
-frontend/node_modules/.cache/default-development/8.pack
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
+# Frontend build cache
+frontend/node_modules/.cache/
