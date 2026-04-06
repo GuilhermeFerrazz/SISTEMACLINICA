@@ -205,6 +205,49 @@ def build_whatsapp_url(phone: str, message: str) -> str:
     """Gera URL wa.me com encoding UTF-8 explícito para suportar emojis."""
     return f"https://wa.me/{phone}?text={whatsapp_encode(message)}"
 
+# ==================== WHITELISTS — proteção contra injeção NoSQL ====================
+# Apenas os campos explicitados aqui chegam ao $set do MongoDB.
+# Qualquer campo extra enviado pelo cliente (ex: role, consent_signed, active)
+# é silenciosamente descartado antes da operação de escrita.
+
+ALLOWED_PATIENT_FIELDS = {
+    "name", "phone", "email", "cpf", "birth_date",
+    "address", "medical_history", "allergies", "notes"
+}
+
+ALLOWED_APPOINTMENT_FIELDS = {
+    "patient_id", "procedure_id", "date", "time", "status", "notes"
+}
+
+ALLOWED_TEMPLATE_FIELDS = {
+    "name", "message", "days_interval", "active"
+}
+
+ALLOWED_SETTINGS_FIELDS = {
+    "logo_url", "responsible_name", "clinic_name", "clinic_phone", "label_config"
+}
+
+ALLOWED_PRODUCT_FIELDS = {
+    "name", "category", "quantity", "batch_number",
+    "expiration_date", "supplier", "fill_date", "responsible", "notes"
+}
+
+ALLOWED_USER_FIELDS = {
+    "name", "email", "password", "role", "active"
+}
+
+ALLOWED_MEDICAL_RECORD_FIELDS = {
+    "patient_id", "date", "procedure_name", "notes",
+    "photos_before", "photos_after", "evolution", "anamnesis"
+}
+
+ALLOWED_PROCEDURE_FIELDS = {
+    "name", "duration_minutes", "products_used",
+    "price", "description", "consent_template"
+}
+
+# ==================== FIM WHITELISTS ====================
+
 # Auth Helpers
 def get_jwt_secret() -> str:
     return os.environ.get("JWT_SECRET")
@@ -357,7 +400,10 @@ async def get_message_templates(current_user: dict = Depends(get_current_user)):
 
 @api_router.put("/message-templates/{id}")
 async def update_template(id: str, request: Request, current_user: dict = Depends(get_current_user)):
-    data = await request.json()
+    raw = await request.json()
+    data = {k: v for k, v in raw.items() if k in ALLOWED_TEMPLATE_FIELDS}
+    if not data:
+        raise HTTPException(status_code=400, detail="Nenhum dado valido para atualizar")
     await db.message_templates.update_one({"id": id}, {"$set": data})
     return {"message": "Template atualizado"}
 
@@ -406,7 +452,10 @@ async def create_patient(patient: dict, current_user: dict = Depends(get_current
 
 @api_router.put("/patients/{id}")
 async def update_patient(id: str, request: Request, current_user: dict = Depends(get_current_user)):
-    data = await request.json()
+    raw = await request.json()
+    data = {k: v for k, v in raw.items() if k in ALLOWED_PATIENT_FIELDS}
+    if not data:
+        raise HTTPException(status_code=400, detail="Nenhum dado valido para atualizar")
     await db.patients.update_one({"id": id}, {"$set": data})
     return {"message": "Paciente atualizado"}
 
@@ -466,7 +515,21 @@ async def create_appointment(appo: dict, current_user: dict = Depends(get_curren
 
 @api_router.put("/appointments/{id}")
 async def update_appointment(id: str, request: Request, current_user: dict = Depends(get_current_user)):
-    data = await request.json()
+    raw = await request.json()
+    data = {k: v for k, v in raw.items() if k in ALLOWED_APPOINTMENT_FIELDS}
+    if not data:
+        raise HTTPException(status_code=400, detail="Nenhum dado valido para atualizar")
+    # Se paciente mudou, atualiza campos desnormalizados de forma controlada
+    if "patient_id" in data:
+        patient = await db.patients.find_one({"id": data["patient_id"]}, {"_id": 0})
+        if patient:
+            data["patient_name"] = patient["name"]
+            data["patient_phone"] = patient["phone"]
+    # Se procedimento mudou, atualiza nome desnormalizado de forma controlada
+    if "procedure_id" in data:
+        procedure = await db.procedures.find_one({"id": data["procedure_id"]}, {"_id": 0})
+        if procedure:
+            data["procedure_name"] = procedure["name"]
     await db.appointments.update_one({"id": id}, {"$set": data})
     return {"message": "Agendamento atualizado"}
 
@@ -582,11 +645,13 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
 
 @api_router.put("/settings")
 async def update_settings(request: Request, current_user: dict = Depends(get_current_user)):
-    data = await request.json()
+    raw = await request.json()
+    data = {k: v for k, v in raw.items() if k in ALLOWED_SETTINGS_FIELDS}
     if data.get("logo_url") and data["logo_url"].startswith("data:image"):
         data["logo_url"] = upload_to_r2(data["logo_url"], "config")
+    data["type"] = "clinic"
     await db.settings.update_one({"type": "clinic"}, {"$set": data}, upsert=True)
-    return {"message": "Configurações salvas"}
+    return {"message": "Configuracoes salvas"}
 
 # ==================== ROTAS FALTANTES ====================
 
@@ -707,7 +772,10 @@ async def get_product(product_id: str, current_user: dict = Depends(get_current_
 
 @api_router.put("/products/{product_id}")
 async def update_product(product_id: str, request: Request, current_user: dict = Depends(get_current_user)):
-    data = await request.json()
+    raw = await request.json()
+    data = {k: v for k, v in raw.items() if k in ALLOWED_PRODUCT_FIELDS}
+    if not data:
+        raise HTTPException(status_code=400, detail="Nenhum dado valido para atualizar")
     await db.products.update_one({"qr_code_id": product_id}, {"$set": data})
     product = await db.products.find_one({"qr_code_id": product_id}, {"_id": 0})
     product["id"] = product["qr_code_id"]
@@ -954,7 +1022,10 @@ async def get_user(user_id: str, current_user: dict = Depends(get_admin_user)):
 
 @api_router.put("/admin/users/{user_id}")
 async def update_user(user_id: str, request: Request, current_user: dict = Depends(get_admin_user)):
-    data = await request.json()
+    raw = await request.json()
+    data = {k: v for k, v in raw.items() if k in ALLOWED_USER_FIELDS}
+    if not data:
+        raise HTTPException(status_code=400, detail="Nenhum dado valido para atualizar")
     if "password" in data:
         data["password_hash"] = hash_password(data.pop("password"))
     await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": data})
@@ -1129,7 +1200,10 @@ async def get_medical_record(record_id: str, current_user: dict = Depends(get_cu
 
 @api_router.put("/medical-records/{record_id}")
 async def update_medical_record(record_id: str, request: Request, current_user: dict = Depends(get_current_user)):
-    data = await request.json()
+    raw = await request.json()
+    data = {k: v for k, v in raw.items() if k in ALLOWED_MEDICAL_RECORD_FIELDS}
+    if not data:
+        raise HTTPException(status_code=400, detail="Nenhum dado valido para atualizar")
     if data.get("photos_before"):
         data["photos_before"] = [upload_to_r2(p, "prontuarios") if isinstance(p, str) and p.startswith("data:image") else p for p in data["photos_before"]]
     if data.get("photos_after"):
@@ -1166,7 +1240,10 @@ async def get_procedure_by_id(procedure_id: str, current_user: dict = Depends(ge
 
 @api_router.put("/procedures/{procedure_id}")
 async def update_procedure(procedure_id: str, request: Request, current_user: dict = Depends(get_current_user)):
-    data = await request.json()
+    raw = await request.json()
+    data = {k: v for k, v in raw.items() if k in ALLOWED_PROCEDURE_FIELDS}
+    if not data:
+        raise HTTPException(status_code=400, detail="Nenhum dado valido para atualizar")
     await db.procedures.update_one({"id": procedure_id}, {"$set": data})
     result = await db.procedures.find_one({"id": procedure_id}, {"_id": 0})
     return result or {"message": "Procedimento atualizado"}
