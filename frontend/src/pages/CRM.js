@@ -7,12 +7,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { 
   Users, Plus, Search, User, Phone, Mail, Calendar, MapPin, 
   FileText, AlertCircle, Shield, Download, Trash2, History,
-  CheckCircle, Clock, Pencil, Heart, ClipboardCheck, X
+  CheckCircle, Clock, Pencil, Heart, ClipboardCheck, X, Syringe
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { assertHttps } from '@/lib/utils';
@@ -52,6 +53,11 @@ const CRM = () => {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isConsentOpen, setIsConsentOpen] = useState(false);
   const [editData, setEditData] = useState({});
+  const [procedures, setProcedures] = useState([]);
+  const [selectedProcedureId, setSelectedProcedureId] = useState('');
+  const [consentText, setConsentText] = useState('');
+  const [isEditingConsent, setIsEditingConsent] = useState(false);
+  const [sendingConsent, setSendingConsent] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -66,6 +72,7 @@ const CRM = () => {
 
   useEffect(() => {
     fetchPatients();
+    fetchProcedures();
   }, []);
 
   useEffect(() => {
@@ -91,6 +98,15 @@ const CRM = () => {
       toast.error('Erro ao carregar pacientes');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchProcedures = async () => {
+    try {
+      const { data } = await axios.get(`${API}/procedures`, { withCredentials: true });
+      setProcedures(data);
+    } catch (error) {
+      // procedimentos não críticos para o carregamento da página
     }
   };
 
@@ -185,24 +201,67 @@ const CRM = () => {
     }
   };
 
-  // ─── Assinatura do termo — dado mais sensível do fluxo ──────────────────────
+  const handleProcedureChange = (procedureId) => {
+    setSelectedProcedureId(procedureId);
+    if (procedureId === 'lgpd_geral') {
+      setConsentText(CONSENT_TEXT);
+    } else {
+      const proc = procedures.find(p => p.id === procedureId);
+      if (proc && proc.consent_template) {
+        // ✅ Usa o termo específico do procedimento (configurado em CRM > Configurações > Termos)
+        setConsentText(proc.consent_template);
+      } else {
+        // ⚠️ Procedimento sem termo próprio: avisa e usa LGPD geral como base
+        setConsentText(CONSENT_TEXT);
+        toast.warning('Este procedimento não tem termo específico configurado. Configure em CRM > Configurações > Termos de Consentimento.');
+      }
+    }
+    setIsEditingConsent(false);
+  };
+
+  const handleOpenConsent = () => {
+    setSelectedProcedureId('');
+    setConsentText(CONSENT_TEXT);
+    setIsEditingConsent(false);
+    setIsConsentOpen(true);
+  };
+
+  // ─── Gera link de assinatura e envia via WhatsApp ───────────────────────────
   const handleSignConsent = async () => {
     if (!selectedPatient) return;
+    if (!selectedProcedureId) {
+      toast.error('Selecione um procedimento para o termo de consentimento');
+      return;
+    }
+    if (!consentText || consentText.trim() === '') {
+      toast.error('O texto do termo de consentimento está vazio');
+      return;
+    }
+    setSendingConsent(true);
     try {
-      assertHttps(API); // 🔒 guard PII — assinatura + consentimento LGPD
-      await axios.post(`${API}/patients/${selectedPatient.id}/consent`, {
+      assertHttps(API); // 🔒 guard PII — link de assinatura LGPD
+      const payload = {
         patient_id: selectedPatient.id,
-        consent_text: CONSENT_TEXT,
-        signature: `Assinado digitalmente em ${new Date().toLocaleString('pt-BR')}`
-      }, { withCredentials: true });
-      toast.success('Termo de consentimento assinado com sucesso!');
+        procedure_id: selectedProcedureId === 'lgpd_geral' ? '' : selectedProcedureId,
+        procedure_name: selectedProcedureId === 'lgpd_geral'
+          ? 'Termo LGPD Geral'
+          : (procedures.find(p => p.id === selectedProcedureId)?.name || ''),
+        consent_text: consentText
+      };
+      const { data } = await axios.post(`${API}/consent/generate-link`, payload, { withCredentials: true });
+      if (data.whatsapp_url) {
+        window.open(data.whatsapp_url, '_blank');
+      }
+      toast.success('Link de assinatura gerado! Envie pelo WhatsApp.');
       setIsConsentOpen(false);
+      setSelectedProcedureId('');
+      setConsentText(CONSENT_TEXT);
+      setIsEditingConsent(false);
       fetchPatients();
-      const { data } = await axios.get(`${API}/patients/${selectedPatient.id}`, { withCredentials: true });
-      setSelectedPatient(data);
     } catch (error) {
-      console.error('Error signing consent:', error);
-      toast.error(error.message.startsWith('Bloqueado:') ? error.message : 'Erro ao assinar termo');
+      toast.error(error.message?.startsWith('Bloqueado:') ? error.message : 'Erro ao gerar link de consentimento');
+    } finally {
+      setSendingConsent(false);
     }
   };
 
@@ -606,12 +665,12 @@ const CRM = () => {
                         </div>
                       ) : (
                         <Button
-                          onClick={() => setIsConsentOpen(true)}
+                          onClick={handleOpenConsent}
                           className="w-full bg-primary text-primary-foreground"
                           data-testid="sign-consent-button"
                         >
                           <ClipboardCheck className="w-4 h-4 mr-2" />
-                          Assinar Termo de Consentimento
+                          Enviar Termo por WhatsApp
                         </Button>
                       )}
                     </Card>
@@ -748,7 +807,14 @@ const CRM = () => {
         </Dialog>
 
         {/* Consent Dialog */}
-        <Dialog open={isConsentOpen} onOpenChange={setIsConsentOpen}>
+        <Dialog open={isConsentOpen} onOpenChange={(open) => {
+          setIsConsentOpen(open);
+          if (!open) {
+            setSelectedProcedureId('');
+            setConsentText(CONSENT_TEXT);
+            setIsEditingConsent(false);
+          }
+        }}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden p-0">
             <div className="sticky top-0 bg-card border-b border-border p-6 z-10">
               <DialogHeader>
@@ -757,20 +823,80 @@ const CRM = () => {
                   Termo de Consentimento - LGPD
                 </DialogTitle>
               </DialogHeader>
+
+              {/* Seletor de Procedimento */}
+              <div className="mt-4 space-y-2">
+                <Label className="text-sm font-medium flex items-center gap-2">
+                  <Syringe className="w-4 h-4 text-primary" />
+                  Selecione o Procedimento
+                </Label>
+                <Select value={selectedProcedureId} onValueChange={handleProcedureChange}>
+                  <SelectTrigger data-testid="consent-procedure-select" className="w-full">
+                    <SelectValue placeholder="Escolha o procedimento para carregar o termo específico..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="lgpd_geral">LGPD - Termo Geral</SelectItem>
+                    {procedures.map((proc) => (
+                      <SelectItem key={proc.id} value={proc.id}>
+                        {proc.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            
-            <ScrollArea className="h-[50vh] px-6">
+
+            <ScrollArea className="h-[45vh] px-6">
               <div className="py-4">
-                <Card className="bg-secondary/30 p-4 rounded-lg">
-                  <pre className="text-sm whitespace-pre-wrap font-sans">{CONSENT_TEXT}</pre>
-                </Card>
+                <div className="flex items-center justify-between mb-3">
+                  <Label className="text-sm font-medium text-muted-foreground">
+                    {isEditingConsent ? 'Editando o termo de consentimento' : 'Texto do termo de consentimento'}
+                    {selectedProcedureId && selectedProcedureId !== 'lgpd_geral' && (() => {
+                      const proc = procedures.find(p => p.id === selectedProcedureId);
+                      return proc?.consent_template
+                        ? <span style={{marginLeft: 8, fontSize: 11, background: '#dcfce7', color: '#166534', padding: '2px 8px', borderRadius: 6, fontWeight: 600}}>✓ Termo específico</span>
+                        : <span style={{marginLeft: 8, fontSize: 11, background: '#fef9c3', color: '#854d0e', padding: '2px 8px', borderRadius: 6, fontWeight: 600}}>⚠ Sem termo configurado</span>;
+                    })()}
+                  </Label>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setIsEditingConsent(!isEditingConsent)}
+                    className="gap-1 text-xs h-7"
+                    data-testid="toggle-edit-consent-button"
+                  >
+                    <Pencil className="w-3 h-3" />
+                    {isEditingConsent ? 'Visualizar' : 'Editar Texto'}
+                  </Button>
+                </div>
+
+                {isEditingConsent ? (
+                  <Textarea
+                    data-testid="consent-text-editor"
+                    value={consentText}
+                    onChange={(e) => setConsentText(e.target.value)}
+                    className="min-h-[300px] font-sans text-sm resize-y"
+                    placeholder="Digite o texto do termo de consentimento..."
+                  />
+                ) : (
+                  <Card className="bg-secondary/30 p-4 rounded-lg">
+                    <pre className="text-sm whitespace-pre-wrap font-sans">{consentText}</pre>
+                  </Card>
+                )}
               </div>
             </ScrollArea>
-            
+
             <div className="sticky bottom-0 bg-card border-t border-border p-6 space-y-4">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <CheckCircle className="w-4 h-4 text-primary" />
-                <span>Paciente: <strong>{selectedPatient?.name}</strong></span>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <CheckCircle className="w-4 h-4 text-primary" />
+                  <span>Paciente: <strong>{selectedPatient?.name}</strong></span>
+                </div>
+                {selectedProcedureId && selectedProcedureId !== 'lgpd_geral' && (
+                  <span className="text-xs px-2 py-1 rounded-full bg-primary/10 text-primary">
+                    {procedures.find(p => p.id === selectedProcedureId)?.name}
+                  </span>
+                )}
               </div>
               <div className="flex gap-3">
                 <Button
@@ -785,9 +911,16 @@ const CRM = () => {
                   onClick={handleSignConsent}
                   className="flex-1 bg-primary text-primary-foreground"
                   data-testid="confirm-consent-button"
+                  disabled={sendingConsent}
                 >
-                  <ClipboardCheck className="w-4 h-4 mr-2" />
-                  Assinar Digitalmente
+                  {sendingConsent ? (
+                    <>Gerando link...</>
+                  ) : (
+                    <>
+                      <ClipboardCheck className="w-4 h-4 mr-2" />
+                      Enviar por WhatsApp
+                    </>
+                  )}
                 </Button>
               </div>
             </div>
