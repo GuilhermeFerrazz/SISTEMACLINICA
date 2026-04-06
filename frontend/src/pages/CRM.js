@@ -9,18 +9,18 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { 
   Users, Plus, Search, User, Phone, Mail, Calendar, MapPin, 
   FileText, AlertCircle, Shield, Download, Trash2, History,
-  CheckCircle, Clock, Pencil, Heart, ClipboardCheck, X, Syringe
+  CheckCircle, Clock, Pencil, Heart, ClipboardCheck, X
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { assertHttps } from '@/lib/utils';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
-const DEFAULT_CONSENT_TEXT = `TERMO DE CONSENTIMENTO PARA TRATAMENTO DE DADOS PESSOAIS
+const CONSENT_TEXT = `TERMO DE CONSENTIMENTO PARA TRATAMENTO DE DADOS PESSOAIS
 
 Em conformidade com a Lei Geral de Proteção de Dados (LGPD - Lei nº 13.709/2018), declaro que:
 
@@ -52,12 +52,6 @@ const CRM = () => {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isConsentOpen, setIsConsentOpen] = useState(false);
   const [editData, setEditData] = useState({});
-  const [procedures, setProcedures] = useState([]);
-  const [selectedProcedureId, setSelectedProcedureId] = useState('');
-  const [consentText, setConsentText] = useState(DEFAULT_CONSENT_TEXT);
-  const [isEditingConsent, setIsEditingConsent] = useState(false);
-  const [sendingConsent, setSendingConsent] = useState(false);
-  const [consentLinks, setConsentLinks] = useState([]);
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -72,8 +66,6 @@ const CRM = () => {
 
   useEffect(() => {
     fetchPatients();
-    fetchProcedures();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -89,50 +81,13 @@ const CRM = () => {
     }
   }, [searchTerm, patients]);
 
-  const fetchProcedures = async () => {
-    try {
-      const { data } = await axios.get(`${API}/procedures`, { withCredentials: true });
-      setProcedures(data);
-    } catch (error) {
-      // (log removido)
-    }
-  };
-
-  const fetchConsentLinks = async (patientId) => {
-    try {
-      const { data } = await axios.get(`${API}/consent/pending/${patientId}`, { withCredentials: true });
-      setConsentLinks(data);
-    } catch (error) {
-      // (log removido)
-    }
-  };
-
-  const handleDownloadPDF = async (token) => {
-    try {
-      const response = await axios.get(`${API}/consent/pdf/${token}`, {
-        withCredentials: true,
-        responseType: 'blob'
-      });
-      const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `termo_consentimento.pdf`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-      toast.success('PDF baixado com sucesso!');
-    } catch (error) {
-      toast.error('Erro ao gerar PDF');
-    }
-  };
-
   const fetchPatients = async () => {
     try {
       const { data } = await axios.get(`${API}/patients`, { withCredentials: true });
       setPatients(data);
       setFilteredPatients(data);
     } catch (error) {
+      console.error('Error fetching patients:', error);
       toast.error('Erro ao carregar pacientes');
     } finally {
       setLoading(false);
@@ -144,40 +99,45 @@ const CRM = () => {
       const { data } = await axios.get(`${API}/patients/${patientId}/history`, { withCredentials: true });
       setPatientHistory(data);
     } catch (error) {
-      // (log removido)
+      console.error('Error fetching patient history:', error);
     }
   };
 
+  // ─── Criação de paciente — contém CPF, histórico médico, alergias ───────────
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
+      assertHttps(API); // 🔒 guard PII
       await axios.post(`${API}/patients`, formData, { withCredentials: true });
       toast.success('Paciente cadastrado com sucesso!');
       setIsCreateOpen(false);
       setFormData({ name: '', phone: '', email: '', cpf: '', birth_date: '', address: '', medical_history: '', allergies: '', notes: '' });
       fetchPatients();
     } catch (error) {
-      toast.error('Erro ao cadastrar paciente');
+      console.error('Error creating patient:', error);
+      toast.error(error.message.startsWith('Bloqueado:') ? error.message : 'Erro ao cadastrar paciente');
     }
   };
 
+  // ─── Edição de paciente — mesmos campos sensíveis ───────────────────────────
   const handleEditSubmit = async (e) => {
     e.preventDefault();
     if (!selectedPatient) return;
     try {
+      assertHttps(API); // 🔒 guard PII
       await axios.put(`${API}/patients/${selectedPatient.id}`, editData, { withCredentials: true });
       toast.success('Paciente atualizado com sucesso!');
       setIsEditOpen(false);
       fetchPatients();
     } catch (error) {
-      toast.error('Erro ao atualizar paciente');
+      console.error('Error updating patient:', error);
+      toast.error(error.message.startsWith('Bloqueado:') ? error.message : 'Erro ao atualizar paciente');
     }
   };
 
   const handleViewPatient = async (patient) => {
     setSelectedPatient(patient);
     await fetchPatientHistory(patient.id);
-    fetchConsentLinks(patient.id);
     setIsViewOpen(true);
   };
 
@@ -225,90 +185,25 @@ const CRM = () => {
     }
   };
 
-  /**
-   * FIX: Reconstrução da URL do WhatsApp no frontend.
-   *
-   * PROBLEMA ANTERIOR: a backend retornava `whatsapp_url` já com percent-encoding
-   * feito em Python — mas emojis armazenados no MongoDB como pares substitutos CESU-8
-   * não eram corretamente reconstruídos antes do encoding, resultando em ◆ (U+FFFD)
-   * no WhatsApp do paciente.
-   *
-   * SOLUÇÃO: usar `data.message` (texto puro) retornado pelo backend e deixar o
-   * JavaScript/browser fazer o encodeURIComponent — que trata Unicode corretamente,
-   * inclusive emojis fora do BMP (U+1F000+).
-   */
-  const buildWhatsAppUrl = (phone, message) => {
-    let cleanPhone = (phone || '').replace(/[\s\-\(\)]/g, '');
-    if (cleanPhone && !cleanPhone.startsWith('55')) cleanPhone = '55' + cleanPhone;
-    return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
-  };
-
+  // ─── Assinatura do termo — dado mais sensível do fluxo ──────────────────────
   const handleSignConsent = async () => {
     if (!selectedPatient) return;
-    if (!selectedProcedureId) {
-      toast.error('Selecione um procedimento para o termo de consentimento');
-      return;
-    }
-    if (!consentText || consentText.trim() === '') {
-      toast.error('O texto do termo de consentimento está vazio');
-      return;
-    }
-    setSendingConsent(true);
     try {
-      const payload = {
+      assertHttps(API); // 🔒 guard PII — assinatura + consentimento LGPD
+      await axios.post(`${API}/patients/${selectedPatient.id}/consent`, {
         patient_id: selectedPatient.id,
-        procedure_id: selectedProcedureId === 'lgpd_geral' ? '' : selectedProcedureId,
-        procedure_name: selectedProcedureId === 'lgpd_geral'
-          ? 'Termo LGPD Geral'
-          : (procedures.find(p => p.id === selectedProcedureId)?.name || ''),
-        consent_text: consentText
-      };
-      const { data } = await axios.post(`${API}/consent/generate-link`, payload, { withCredentials: true });
-
-      // FIX: Reconstruir URL no frontend usando data.message (texto puro) para evitar
-      // emojis quebrados causados pelo encoding Python/MongoDB no backend.
-      // JavaScript's encodeURIComponent lida corretamente com todos os codepoints Unicode.
-      if (data.message && selectedPatient?.phone) {
-        const waUrl = buildWhatsAppUrl(selectedPatient.phone, data.message);
-        window.open(waUrl, '_blank');
-      } else if (data.whatsapp_url) {
-        // Fallback para URL do backend caso message não esteja disponível
-        window.open(data.whatsapp_url, '_blank');
-      }
-
-      toast.success('Link de assinatura gerado! Envie pelo WhatsApp.');
+        consent_text: CONSENT_TEXT,
+        signature: `Assinado digitalmente em ${new Date().toLocaleString('pt-BR')}`
+      }, { withCredentials: true });
+      toast.success('Termo de consentimento assinado com sucesso!');
       setIsConsentOpen(false);
-      setSelectedProcedureId('');
-      setConsentText(DEFAULT_CONSENT_TEXT);
-      setIsEditingConsent(false);
+      fetchPatients();
+      const { data } = await axios.get(`${API}/patients/${selectedPatient.id}`, { withCredentials: true });
+      setSelectedPatient(data);
     } catch (error) {
-      toast.error('Erro ao gerar link de consentimento');
-    } finally {
-      setSendingConsent(false);
+      console.error('Error signing consent:', error);
+      toast.error(error.message.startsWith('Bloqueado:') ? error.message : 'Erro ao assinar termo');
     }
-  };
-
-  const handleOpenConsent = () => {
-    setSelectedProcedureId('');
-    setConsentText(DEFAULT_CONSENT_TEXT);
-    setIsEditingConsent(false);
-    setIsConsentOpen(true);
-  };
-
-  const handleProcedureChange = (procedureId) => {
-    setSelectedProcedureId(procedureId);
-    if (procedureId === 'lgpd_geral') {
-      setConsentText(DEFAULT_CONSENT_TEXT);
-    } else {
-      const proc = procedures.find(p => p.id === procedureId);
-      if (proc && proc.consent_template) {
-        setConsentText(proc.consent_template);
-      } else {
-        setConsentText(DEFAULT_CONSENT_TEXT);
-        toast.warning('Este procedimento não tem termo específico configurado. Configure em CRM > Configurações > Termos de Consentimento.');
-      }
-    }
-    setIsEditingConsent(false);
   };
 
   const formatDate = (dateStr) => {
@@ -705,89 +600,21 @@ const CRM = () => {
                         )}
                       </div>
                       
-                      {selectedPatient?.consent_signed && (
-                        <div className="text-sm text-muted-foreground mb-3">
+                      {selectedPatient?.consent_signed ? (
+                        <div className="text-sm text-muted-foreground">
                           <p>Assinado em: {selectedPatient.consent_date ? new Date(selectedPatient.consent_date).toLocaleString('pt-BR') : '-'}</p>
-                          {selectedPatient.consent_procedure_name && (
-                            <p>Procedimento: {selectedPatient.consent_procedure_name}</p>
-                          )}
                         </div>
+                      ) : (
+                        <Button
+                          onClick={() => setIsConsentOpen(true)}
+                          className="w-full bg-primary text-primary-foreground"
+                          data-testid="sign-consent-button"
+                        >
+                          <ClipboardCheck className="w-4 h-4 mr-2" />
+                          Assinar Termo de Consentimento
+                        </Button>
                       )}
-
-                      <Button
-                        onClick={handleOpenConsent}
-                        className="w-full bg-primary text-primary-foreground"
-                        data-testid="sign-consent-button"
-                      >
-                        <ClipboardCheck className="w-4 h-4 mr-2" />
-                        {selectedPatient?.consent_signed ? 'Enviar Novo Termo por WhatsApp' : 'Enviar Termo por WhatsApp'}
-                      </Button>
-
-                      <Button
-                        variant="outline"
-                        className="w-full mt-2 gap-2"
-                        onClick={() => {
-                          fetchConsentLinks(selectedPatient?.id);
-                          if (selectedPatient?.id) {
-                            axios.get(`${API}/patients/${selectedPatient.id}`, { withCredentials: true })
-                              .then(({ data }) => setSelectedPatient(data))
-                              .catch(() => {});
-                          }
-                        }}
-                        data-testid="refresh-consent-status"
-                      >
-                        <Clock className="w-4 h-4" />
-                        Atualizar Status dos Termos
-                      </Button>
                     </Card>
-
-                    {/* Consent Links History */}
-                    {consentLinks.length > 0 && (
-                      <Card className="p-4 border border-border/60">
-                        <h4 className="font-medium mb-3 flex items-center gap-2">
-                          <FileText className="w-4 h-4 text-primary" />
-                          Termos Enviados
-                        </h4>
-                        <div className="space-y-2">
-                          {consentLinks.map((link) => (
-                            <div key={link.token} className={`flex items-center justify-between p-3 rounded-lg border ${
-                              link.status === 'signed' ? 'bg-green-50 border-green-200' :
-                              link.status === 'expired' ? 'bg-gray-50 border-gray-200' :
-                              'bg-amber-50 border-amber-200'
-                            }`}>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                                    link.status === 'signed' ? 'bg-green-100 text-green-700' :
-                                    link.status === 'expired' ? 'bg-gray-100 text-gray-600' :
-                                    'bg-amber-100 text-amber-700'
-                                  }`}>
-                                    {link.status === 'signed' ? 'Assinado' : link.status === 'expired' ? 'Expirado' : 'Pendente'}
-                                  </span>
-                                  <span className="text-sm font-medium truncate">{link.procedure_name}</span>
-                                </div>
-                                <p className="text-xs text-muted-foreground mt-1">
-                                  Enviado: {new Date(link.created_at).toLocaleString('pt-BR')}
-                                  {link.signed_at && ` | Assinado: ${new Date(link.signed_at).toLocaleString('pt-BR')}`}
-                                </p>
-                              </div>
-                              {link.status === 'signed' && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="ml-2 gap-1 shrink-0"
-                                  onClick={() => handleDownloadPDF(link.token)}
-                                  data-testid={`download-pdf-${link.token}`}
-                                >
-                                  <Download className="w-3 h-3" />
-                                  PDF
-                                </Button>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </Card>
-                    )}
                     
                     <div className="grid grid-cols-2 gap-4">
                       <Button
@@ -813,11 +640,11 @@ const CRM = () => {
                     <Card className="bg-blue-50 border-blue-200 p-4 rounded-lg">
                       <h4 className="text-sm font-medium text-blue-900 mb-2">Direitos do Titular (LGPD)</h4>
                       <ul className="text-xs text-blue-800 space-y-1">
-                        <li>- Confirmação e acesso aos dados pessoais</li>
-                        <li>- Correção de dados incompletos ou desatualizados</li>
-                        <li>- Portabilidade dos dados (exportação)</li>
-                        <li>- Eliminação dos dados pessoais</li>
-                        <li>- Revogação do consentimento</li>
+                        <li>• Confirmação e acesso aos dados pessoais</li>
+                        <li>• Correção de dados incompletos ou desatualizados</li>
+                        <li>• Portabilidade dos dados (exportação)</li>
+                        <li>• Eliminação dos dados pessoais</li>
+                        <li>• Revogação do consentimento</li>
                       </ul>
                     </Card>
                   </TabsContent>
@@ -921,14 +748,7 @@ const CRM = () => {
         </Dialog>
 
         {/* Consent Dialog */}
-        <Dialog open={isConsentOpen} onOpenChange={(open) => {
-          setIsConsentOpen(open);
-          if (!open) {
-            setSelectedProcedureId('');
-            setConsentText(DEFAULT_CONSENT_TEXT);
-            setIsEditingConsent(false);
-          }
-        }}>
+        <Dialog open={isConsentOpen} onOpenChange={setIsConsentOpen}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden p-0">
             <div className="sticky top-0 bg-card border-b border-border p-6 z-10">
               <DialogHeader>
@@ -937,80 +757,20 @@ const CRM = () => {
                   Termo de Consentimento - LGPD
                 </DialogTitle>
               </DialogHeader>
-              
-              {/* Procedure Selector */}
-              <div className="mt-4 space-y-2">
-                <Label className="text-sm font-medium flex items-center gap-2">
-                  <Syringe className="w-4 h-4 text-primary" />
-                  Selecione o Procedimento
-                </Label>
-                <Select value={selectedProcedureId} onValueChange={handleProcedureChange}>
-                  <SelectTrigger data-testid="consent-procedure-select" className="w-full">
-                    <SelectValue placeholder="Escolha o procedimento para carregar o termo específico..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="lgpd_geral">LGPD - Termo Geral</SelectItem>
-                    {procedures.map((proc) => (
-                      <SelectItem key={proc.id} value={proc.id}>
-                        {proc.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
             </div>
             
-            <ScrollArea className="h-[45vh] px-6">
+            <ScrollArea className="h-[50vh] px-6">
               <div className="py-4">
-                <div className="flex items-center justify-between mb-3">
-                  <Label className="text-sm font-medium text-muted-foreground">
-                    {isEditingConsent ? 'Editando o termo de consentimento' : 'Texto do termo de consentimento'}
-                    {selectedProcedureId && selectedProcedureId !== 'lgpd_geral' && (() => {
-                      const proc = procedures.find(p => p.id === selectedProcedureId);
-                      return proc?.consent_template
-                        ? <span style={{marginLeft: 8, fontSize: 11, background: '#dcfce7', color: '#166534', padding: '2px 8px', borderRadius: 6, fontWeight: 600}}>✓ Termo específico</span>
-                        : <span style={{marginLeft: 8, fontSize: 11, background: '#fef9c3', color: '#854d0e', padding: '2px 8px', borderRadius: 6, fontWeight: 600}}>⚠ Sem termo configurado</span>;
-                    })()}
-                  </Label>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setIsEditingConsent(!isEditingConsent)}
-                    className="gap-1 text-xs h-7"
-                    data-testid="toggle-edit-consent-button"
-                  >
-                    <Pencil className="w-3 h-3" />
-                    {isEditingConsent ? 'Visualizar' : 'Editar Texto'}
-                  </Button>
-                </div>
-                
-                {isEditingConsent ? (
-                  <Textarea
-                    data-testid="consent-text-editor"
-                    value={consentText}
-                    onChange={(e) => setConsentText(e.target.value)}
-                    className="min-h-[300px] font-sans text-sm resize-y"
-                    placeholder="Digite o texto do termo de consentimento..."
-                  />
-                ) : (
-                  <Card className="bg-secondary/30 p-4 rounded-lg">
-                    <pre className="text-sm whitespace-pre-wrap font-sans">{consentText}</pre>
-                  </Card>
-                )}
+                <Card className="bg-secondary/30 p-4 rounded-lg">
+                  <pre className="text-sm whitespace-pre-wrap font-sans">{CONSENT_TEXT}</pre>
+                </Card>
               </div>
             </ScrollArea>
             
             <div className="sticky bottom-0 bg-card border-t border-border p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <CheckCircle className="w-4 h-4 text-primary" />
-                  <span>Paciente: <strong>{selectedPatient?.name}</strong></span>
-                </div>
-                {selectedProcedureId && selectedProcedureId !== 'lgpd_geral' && (
-                  <span className="text-xs px-2 py-1 rounded-full bg-primary/10 text-primary">
-                    {procedures.find(p => p.id === selectedProcedureId)?.name}
-                  </span>
-                )}
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <CheckCircle className="w-4 h-4 text-primary" />
+                <span>Paciente: <strong>{selectedPatient?.name}</strong></span>
               </div>
               <div className="flex gap-3">
                 <Button
@@ -1025,16 +785,9 @@ const CRM = () => {
                   onClick={handleSignConsent}
                   className="flex-1 bg-primary text-primary-foreground"
                   data-testid="confirm-consent-button"
-                  disabled={sendingConsent}
                 >
-                  {sendingConsent ? (
-                    <>Gerando link...</>
-                  ) : (
-                    <>
-                      <ClipboardCheck className="w-4 h-4 mr-2" />
-                      Enviar por WhatsApp
-                    </>
-                  )}
+                  <ClipboardCheck className="w-4 h-4 mr-2" />
+                  Assinar Digitalmente
                 </Button>
               </div>
             </div>
