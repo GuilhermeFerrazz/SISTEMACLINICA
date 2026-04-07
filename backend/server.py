@@ -323,6 +323,16 @@ def _get_template_msg(tmpl: dict | None, tmpl_type: str) -> str:
     """Recupera o template do banco ou o padrão, garantindo codificação correta."""
     if tmpl:
         msg = tmpl.get("message", "")
+        
+        # Blindagem Base64: Se a mensagem começar com B64:, decodifica
+        if msg and msg.startswith("B64:"):
+            try:
+                b64_data = msg[4:]
+                return base64.b64decode(b64_data).decode('utf-8')
+            except Exception as e:
+                print(f"Erro ao decodificar template Base64: {e}")
+                # Se falhar, tenta tratar como texto normal abaixo
+        
         # Se a mensagem existir e não estiver visivelmente quebrada por drivers antigos
         if msg and "\ufffd" not in msg:
             # Tenta decodificar o escape unicode se houver

@@ -178,12 +178,28 @@ const CRMSettings = () => {
     }
   };
 
-  const fetchProcedures = async () => {
+  const fetchTemplates = async () => {
     try {
-      const { data } = await axios.get(`${API}/procedures`, { withCredentials: true });
-      setProcedures(data);
+      const { data } = await axios.get(`${API}/message-templates`, { withCredentials: true });
+      
+      // Decodifica mensagens blindadas em Base64
+      const decodedTemplates = data.map(t => {
+        if (t.message && t.message.startsWith('B64:')) {
+          try {
+            const b64 = t.message.substring(4);
+            const decoded = decodeURIComponent(escape(atob(b64)));
+            return { ...t, message: decoded };
+          } catch (e) {
+            console.error("Erro ao decodificar template Base64", e);
+            return t;
+          }
+        }
+        return t;
+      });
+      
+      setTemplates(decodedTemplates);
     } catch (error) {
-      console.error('Error fetching procedures:', error);
+      toast.error('Erro ao carregar templates');
     }
   };
 
@@ -229,12 +245,16 @@ const CRMSettings = () => {
   const handleUpdateTemplate = async () => {
     if (!editingTemplate) return;
     try {
+      // Blindagem Base64 para evitar corrupção de emojis no transporte
+      const encodedMessage = btoa(unescape(encodeURIComponent(editingTemplate.message)));
+      
       await axios.put(`${API}/message-templates/${editingTemplate.id}`, {
         name: editingTemplate.name,
-        message: editingTemplate.message,
+        message: `B64:${encodedMessage}`,
         days_interval: editingTemplate.days_interval,
         active: editingTemplate.active
       }, { withCredentials: true });
+      
       toast.success('Template atualizado!');
       setIsEditOpen(false);
       fetchTemplates();
