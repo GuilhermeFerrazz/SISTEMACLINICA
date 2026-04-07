@@ -41,10 +41,12 @@ const DEFAULT_PDF = {
   font_size_small: 8,
   font_size_legal: 7.5,
   spacing_after_header: 3,
-  spacing_after_title: 4,
-  spacing_after_section: 2,
-  spacing_between_sections: 5,
-};
+    spacing_after_title: 4,
+    spacing_after_section: 2,
+    spacing_between_sections: 5,
+    show_header: true,
+    show_footer: true,
+  };
 
 // Mini preview A4
 const PDFPreview = ({ config, clinicName }) => {
@@ -72,14 +74,18 @@ const PDFPreview = ({ config, clinicName }) => {
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.55)' }} />
         )}
         <div style={{ position: 'relative' }}>
-          <div style={{ textAlign: 'center', marginBottom: config.spacing_after_header * s * 0.4 }}>
-            <div style={{ fontWeight: 'bold', color: hColor, fontSize: config.font_size_title * s * 0.8 }}>
-              {clinicName || 'Dr. Guilherme Ferraz'}
-            </div>
-            {config.cro && <div style={{ color: '#666', fontSize: config.font_size_subtitle * s * 0.8 }}>CRO: {config.cro}</div>}
-            {config.address && <div style={{ color: '#888', fontSize: config.font_size_small * s * 0.8 }}>{config.address}</div>}
-          </div>
-          <div style={{ borderBottom: `0.8px solid ${hColor}`, marginBottom: config.spacing_after_title * s * 0.4 }} />
+          {config.show_header !== false && (
+            <>
+              <div style={{ textAlign: 'center', marginBottom: config.spacing_after_header * s * 0.4 }}>
+                <div style={{ fontWeight: 'bold', color: hColor, fontSize: config.font_size_title * s * 0.8 }}>
+                  {clinicName || 'Dr. Guilherme Ferraz'}
+                </div>
+                {config.cro && <div style={{ color: '#666', fontSize: config.font_size_subtitle * s * 0.8 }}>CRO: {config.cro}</div>}
+                {config.address && <div style={{ color: '#888', fontSize: config.font_size_small * s * 0.8 }}>{config.address}</div>}
+              </div>
+              <div style={{ borderBottom: `0.8px solid ${hColor}`, marginBottom: config.spacing_after_title * s * 0.4 }} />
+            </>
+          )}
           <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: config.font_size_title * s * 0.75, marginBottom: 2 }}>
             TERMO DE CONSENTIMENTO
           </div>
@@ -99,13 +105,15 @@ const PDFPreview = ({ config, clinicName }) => {
             Em conformidade com a LGPD, declaro que autorizo o tratamento dos meus dados pessoais para fins de agendamento e realização de procedimentos estéticos...
           </div>
         </div>
-        <div style={{
-          position: 'absolute', bottom: mb, left: ml, right: mr,
-          borderTop: '0.4px solid #ccc', paddingTop: 2,
-          textAlign: 'center', color: '#999', fontSize: config.font_size_legal * s * 0.8,
-        }}>
-          {config.footer_text || 'Documento com validade jurídica conforme Lei 14.063/2020'}
-        </div>
+        {config.show_footer !== false && (
+          <div style={{
+            position: 'absolute', bottom: mb, left: ml, right: mr,
+            borderTop: '0.4px solid #ccc', paddingTop: 2,
+            textAlign: 'center', color: '#999', fontSize: config.font_size_legal * s * 0.8,
+          }}>
+            {config.footer_text || 'Documento com validade jurídica conforme Lei 14.063/2020'}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -145,6 +153,8 @@ const CRMSettings = () => {
     email: '',
     footer_text: '',
     background_image: '',
+    show_header: true,
+    show_footer: true,
     ...DEFAULT_PDF,
   });
   const [savingLetterhead, setSavingLetterhead] = useState(false);
@@ -435,9 +445,21 @@ const CRMSettings = () => {
 
                 {/* Cabeçalho */}
                 <Card className="rounded-xl p-6 border border-border/60">
-                  <div className="flex items-center gap-2 mb-4 pb-2 border-b border-border/60">
-                    <FileText className="w-4 h-4 text-primary" />
-                    <h3 className="text-sm font-semibold tracking-wide uppercase text-muted-foreground">Informações do Cabeçalho</h3>
+                  <div className="flex items-center justify-between mb-4 pb-2 border-b border-border/60">
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-primary" />
+                      <h3 className="text-sm font-semibold tracking-wide uppercase text-muted-foreground">Informações do Cabeçalho</h3>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-2">
+                        <Label className="text-[10px] uppercase text-muted-foreground">Cabeçalho</Label>
+                        <Switch checked={letterheadConfig.show_header !== false} onCheckedChange={v => setLh('show_header', v)} data-testid="toggle-show-header" />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Label className="text-[10px] uppercase text-muted-foreground">Rodapé</Label>
+                        <Switch checked={letterheadConfig.show_footer !== false} onCheckedChange={v => setLh('show_footer', v)} data-testid="toggle-show-footer" />
+                      </div>
+                    </div>
                   </div>
                   <div className="space-y-4">
                     <div>

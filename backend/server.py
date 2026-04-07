@@ -1469,6 +1469,8 @@ async def build_consent_pdf(consent: dict, settings: dict):
     sp_between = float(lh.get("spacing_between_sections", 5)) * mm
 
     footer_text = lh.get("footer_text") or "Documento com validade juridica conforme Lei 14.063/2020"
+    show_header = lh.get("show_header", True)
+    show_footer = lh.get("show_footer", True)
     bg_data     = lh.get("background_image") or ""
     clinic_name = (settings or {}).get("clinic_name") or "Clinica"
     cro         = lh.get("cro")  or ""
@@ -1500,28 +1502,23 @@ async def build_consent_pdf(consent: dict, settings: dict):
                 c.restoreState()
             except Exception: pass
 
-        # Custom Footer Image/Brand
-        logo_url = (settings or {}).get("logo_url")
-        if logo_url:
-            # We don't download here to avoid blocking, but if it was local we'd use it.
-            pass
-
-        # Footer line + text
-        c.saveState()
-        c.setFont("Helvetica", fs_legal)
-        c.setFillGray(0.4)
-        bot = mb - 5 * mm
-        c.setStrokeColor(rl_colors.lightgrey)
-        c.setLineWidth(0.5)
-        c.line(ml, bot + 2*mm, A4[0] - mr, bot + 2*mm)
-        c.drawCentredString(A4[0] / 2, bot - 3 * mm, footer_text)
-        
-        # Clinic info in footer
-        info_str = f"{clinic_name}"
-        if cro: info_str += f" | CRO: {cro}"
-        if address_val: info_str += f" | {address_val}"
-        c.drawCentredString(A4[0] / 2, bot - 7 * mm, info_str)
-        c.restoreState()
+        if show_footer:
+            # Footer line + text
+            c.saveState()
+            c.setFont("Helvetica", fs_legal)
+            c.setFillGray(0.4)
+            bot = mb - 5 * mm
+            c.setStrokeColor(rl_colors.lightgrey)
+            c.setLineWidth(0.5)
+            c.line(ml, bot + 2*mm, A4[0] - mr, bot + 2*mm)
+            c.drawCentredString(A4[0] / 2, bot - 3 * mm, footer_text)
+            
+            # Clinic info in footer
+            info_str = f"{clinic_name}"
+            if cro: info_str += f" | CRO: {cro}"
+            if address_val: info_str += f" | {address_val}"
+            c.drawCentredString(A4[0] / 2, bot - 7 * mm, info_str)
+            c.restoreState()
 
     buf = BytesIO()
     doc = SimpleDocTemplate(
@@ -1547,14 +1544,15 @@ async def build_consent_pdf(consent: dict, settings: dict):
     story = []
 
     # Clinic header
-    story.append(Paragraph(clinic_name, s_clinic))
-    if cro:         story.append(Paragraph(f"CRO: {cro}", s_sub))
-    if cnpj:        story.append(Paragraph(f"CNPJ: {cnpj}", s_sub))
-    if address_val: story.append(Paragraph(address_val, s_addr))
-    if email_val:   story.append(Paragraph(email_val, s_addr))
-    story.append(Spacer(1, sp_header))
-    story.append(HRFlowable(width="100%", thickness=1, color=h_color))
-    story.append(Spacer(1, sp_title))
+    if show_header:
+        story.append(Paragraph(clinic_name, s_clinic))
+        if cro:         story.append(Paragraph(f"CRO: {cro}", s_sub))
+        if cnpj:        story.append(Paragraph(f"CNPJ: {cnpj}", s_sub))
+        if address_val: story.append(Paragraph(address_val, s_addr))
+        if email_val:   story.append(Paragraph(email_val, s_addr))
+        story.append(Spacer(1, sp_header))
+        story.append(HRFlowable(width="100%", thickness=1, color=h_color))
+        story.append(Spacer(1, sp_title))
 
     # Document title
     story.append(Paragraph("TERMO DE CONSENTIMENTO", s_title))
