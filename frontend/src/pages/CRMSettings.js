@@ -182,12 +182,14 @@ const CRMSettings = () => {
     try {
       const { data } = await axios.get(`${API}/message-templates`, { withCredentials: true });
       
-      // Decodifica mensagens blindadas em Base64
+      // Decodifica mensagens blindadas em Base64 (Método moderno)
       const decodedTemplates = data.map(t => {
         if (t.message && t.message.startsWith('B64:')) {
           try {
             const b64 = t.message.substring(4);
-            const decoded = decodeURIComponent(escape(atob(b64)));
+            const binString = atob(b64);
+            const bytes = Uint8Array.from(binString, (c) => c.charCodeAt(0));
+            const decoded = new TextDecoder().decode(bytes);
             return { ...t, message: decoded };
           } catch (e) {
             console.error("Erro ao decodificar template Base64", e);
@@ -245,8 +247,10 @@ const CRMSettings = () => {
   const handleUpdateTemplate = async () => {
     if (!editingTemplate) return;
     try {
-      // Blindagem Base64 para evitar corrupção de emojis no transporte
-      const encodedMessage = btoa(unescape(encodeURIComponent(editingTemplate.message)));
+      // Blindagem Base64 moderna para evitar corrupção de emojis no transporte
+      const bytes = new TextEncoder().encode(editingTemplate.message);
+      const binString = Array.from(bytes, (byte) => String.fromCharCode(byte)).join("");
+      const encodedMessage = btoa(binString);
       
       await axios.put(`${API}/message-templates/${editingTemplate.id}`, {
         name: editingTemplate.name,
