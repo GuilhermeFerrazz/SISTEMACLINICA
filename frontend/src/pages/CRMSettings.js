@@ -169,39 +169,31 @@ const CRMSettings = () => {
   const fetchTemplates = async () => {
     try {
       const { data } = await axios.get(`${API}/message-templates`, { withCredentials: true });
-      const crmTemplates = data.filter(t => ['birthday', 'botox_return', 'inactive_patient', 'consent_link'].includes(t.type));
-      setTemplates(crmTemplates);
+      
+      // Filtra e Decodifica mensagens blindadas em Base64 (Método moderno)
+      const processedTemplates = data
+        .filter(t => ['birthday', 'botox_return', 'inactive_patient', 'consent_link'].includes(t.type))
+        .map(t => {
+          if (t.message && t.message.startsWith('B64:')) {
+            try {
+              const b64 = t.message.substring(4);
+              const binString = atob(b64);
+              const bytes = Uint8Array.from(binString, (c) => c.charCodeAt(0));
+              const decoded = new TextDecoder().decode(bytes);
+              return { ...t, message: decoded };
+            } catch (e) {
+              console.error("Erro ao decodificar template Base64", e);
+              return t;
+            }
+          }
+          return t;
+        });
+      
+      setTemplates(processedTemplates);
     } catch (error) {
       toast.error('Erro ao carregar templates');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchTemplates = async () => {
-    try {
-      const { data } = await axios.get(`${API}/message-templates`, { withCredentials: true });
-      
-      // Decodifica mensagens blindadas em Base64 (Método moderno)
-      const decodedTemplates = data.map(t => {
-        if (t.message && t.message.startsWith('B64:')) {
-          try {
-            const b64 = t.message.substring(4);
-            const binString = atob(b64);
-            const bytes = Uint8Array.from(binString, (c) => c.charCodeAt(0));
-            const decoded = new TextDecoder().decode(bytes);
-            return { ...t, message: decoded };
-          } catch (e) {
-            console.error("Erro ao decodificar template Base64", e);
-            return t;
-          }
-        }
-        return t;
-      });
-      
-      setTemplates(decodedTemplates);
-    } catch (error) {
-      toast.error('Erro ao carregar templates');
     }
   };
 
