@@ -80,6 +80,25 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
+# ==================== UNICODE UTILS ====================
+def unicode_escape_encode(s: str) -> str:
+    """Converte emojis e caracteres especiais em sequências de escape literais (ex: \\U0001F60A)."""
+    if not s: return s
+    # Usa double-slash para evitar que o Python processe o escape antes de salvar
+    return s.encode('unicode_escape').decode('ascii')
+
+def unicode_escape_decode(s: str) -> str:
+    """Converte sequências de escape literais de volta em caracteres reais (ex: \\U0001F60A -> 😊)."""
+    if not s: return s
+    try:
+        # Se contiver escapes literais (\u ou \U), decodifica
+        if "\\u" in s or "\\U" in s:
+            return s.encode('ascii').decode('unicode_escape')
+        return s
+    except Exception:
+        return s
+# ========================================================
+
 app = FastAPI()
 
 # ==================== CORS ====================
@@ -304,15 +323,12 @@ def _get_template_msg(tmpl: dict | None, tmpl_type: str) -> str:
     """Recupera o template do banco ou o padrão, garantindo codificação correta."""
     if tmpl:
         msg = tmpl.get("message", "")
-        # Se a mensagem existir e não estiver visivelmente quebrada
+        # Se a mensagem existir e não estiver visivelmente quebrada por drivers antigos
         if msg and "\ufffd" not in msg:
-            # Tenta normalizar caso tenha vindo de um sistema com codificação diferente
-            try:
-                return unicodedata.normalize('NFC', msg)
-            except Exception:
-                return msg
+            # Tenta decodificar o escape unicode se houver
+            return unicode_escape_decode(msg)
             
-    # Caso contrário (vazia ou corrompida), retorna o template padrão com emojis corretos
+    # Caso contrário (vazia ou corrompida), retorna o template padrão
     return _DEFAULT_TEMPLATES.get(tmpl_type, "")
 
 
@@ -487,10 +503,9 @@ import unicodedata
 async def update_template(id: str, request: Request, current_user: dict = Depends(get_current_user)):
     data = await request.json()
     
-    # Normalização Unicode para garantir que emojis sejam salvos de forma robusta
+    # Codificação de Escape Unicode para garantir que emojis NUNCA corrompam no banco
     if "message" in data and isinstance(data["message"], str):
-        # Normaliza para NFC (forma composta padrão)
-        data["message"] = unicodedata.normalize('NFC', data["message"])
+        data["message"] = unicode_escape_encode(data["message"])
         
     await db.message_templates.update_one({"id": id}, {"$set": data})
     return {"message": "Template atualizado"}
