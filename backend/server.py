@@ -301,10 +301,14 @@ _DEFAULT_TEMPLATES: dict = {
 
 
 def _get_template_msg(tmpl: dict | None, tmpl_type: str) -> str:
+    """Recupera o template do banco ou o padrão, garantindo codificação correta."""
     if tmpl:
         msg = tmpl.get("message", "")
+        # Se a mensagem existir e NÃO contiver o caractere de erro , ela é válida
         if msg and "\ufffd" not in msg:
             return msg
+            
+    # Caso contrário (vazia ou corrompida), retorna o template padrão com emojis corretos
     return _DEFAULT_TEMPLATES.get(tmpl_type, "")
 
 
@@ -325,8 +329,12 @@ def _reconstruct_surrogates(s: str) -> str:
 
 
 def whatsapp_encode(message: str) -> str:
-    fixed = _reconstruct_surrogates(message)
-    return quote(fixed.encode("utf-8", errors="replace"), safe="")
+    # Remove qualquer caractere corrompido que possa ter sobrado
+    clean_msg = message.replace("\ufffd", "")
+    # Reconstrói pares de substituição (surrogates) se houver
+    fixed = _reconstruct_surrogates(clean_msg)
+    # Codifica para UTF-8 puro
+    return quote(fixed.encode("utf-8"), safe="")
 
 
 def build_whatsapp_url(phone: str, message: str) -> str:
