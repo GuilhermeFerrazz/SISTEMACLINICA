@@ -288,7 +288,12 @@ const CRM = () => {
         consent_text: consentText
       };
       const { data } = await axios.post(`${API}/consent/generate-link`, payload, { withCredentials: true });
-      if (data.whatsapp_url) {
+      if (data.message && selectedPatient?.phone) {
+        const phone = selectedPatient.phone.replace(/\D/g, '');
+        const finalPhone = phone.startsWith('55') ? phone : `55${phone}`;
+        const whatsappUrl = `https://wa.me/${finalPhone}?text=${encodeURIComponent(data.message)}`;
+        window.open(whatsappUrl, '_blank');
+      } else if (data.whatsapp_url) {
         window.open(data.whatsapp_url, '_blank');
       }
       toast.success('Link de assinatura gerado! Envie pelo WhatsApp.');
