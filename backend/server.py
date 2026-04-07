@@ -28,10 +28,14 @@ import json
 # PDF Imports
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
-from reportlab.lib.colors import HexColor
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Image as RLImage
+from reportlab.lib.colors import HexColor, black, white, Color
+from reportlab.lib import colors as rl_colors
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+    HRFlowable, Image as RLImage
+)
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
+from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_RIGHT
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -564,11 +568,9 @@ async def get_by_payment(current_user: dict = Depends(get_current_user)):
 
 @api_router.get("/finance/reports/export-pdf")
 async def export_finance_pdf(current_user: dict = Depends(get_current_user)):
-    from reportlab.lib.colors import HexColor as _HexColor, white
     from reportlab.platypus import Table, TableStyle, HRFlowable
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.enums import TA_CENTER, TA_RIGHT
-    from reportlab.lib import colors
 
     now = datetime.now(timezone.utc)
     first_day = now.replace(day=1).strftime("%Y-%m-%d")
@@ -579,8 +581,8 @@ async def export_finance_pdf(current_user: dict = Depends(get_current_user)):
     settings    = await db.settings.find_one({"type": "clinic"}, {"_id": 0}) or {}
     clinic_name = settings.get("clinic_name", "Clinica")
     lh          = settings.get("letterhead_config", {})
-    try:    h_color = _HexColor(lh.get("header_color", "#1a3a1a"))
-    except: h_color = _HexColor("#1a3a1a")
+    try:    h_color = HexColor(lh.get("header_color", "#1a3a1a"))
+    except: h_color = HexColor("#1a3a1a")
 
     income  = sum(t.get("amount", 0) for t in transactions if t.get("type") == "income")
     expense = sum(t.get("amount", 0) for t in transactions if t.get("type") == "expense")
@@ -599,13 +601,13 @@ async def export_finance_pdf(current_user: dict = Depends(get_current_user)):
         return ParagraphStyle(name, parent=_styles["Normal"], **kw)
 
     s_title   = sty("ft",  fontSize=16,  textColor=h_color, fontName="Helvetica-Bold", alignment=TA_CENTER, spaceAfter=4*mm)
-    s_sub     = sty("fs",  fontSize=9,   textColor=colors.grey, alignment=TA_CENTER, spaceAfter=6*mm)
+    s_sub     = sty("fs",  fontSize=9,   textColor=rl_colors.grey, alignment=TA_CENTER, spaceAfter=6*mm)
     s_section = sty("fsc", fontSize=11,  textColor=h_color, fontName="Helvetica-Bold", spaceBefore=6*mm, spaceAfter=3*mm)
     s_bold    = sty("fb",  fontSize=8.5, fontName="Helvetica-Bold")
     s_bold_r  = sty("fbr", fontSize=8.5, fontName="Helvetica-Bold", alignment=TA_RIGHT)
     s_cell    = sty("fc",  fontSize=8.5)
-    green_r   = sty("gr",  fontSize=8.5, alignment=TA_RIGHT, textColor=_HexColor("#16a34a"), fontName="Helvetica-Bold")
-    red_r     = sty("rr",  fontSize=8.5, alignment=TA_RIGHT, textColor=_HexColor("#dc2626"), fontName="Helvetica-Bold")
+    green_r   = sty("gr",  fontSize=8.5, alignment=TA_RIGHT, textColor=HexColor("#16a34a"), fontName="Helvetica-Bold")
+    red_r     = sty("rr",  fontSize=8.5, alignment=TA_RIGHT, textColor=HexColor("#dc2626"), fontName="Helvetica-Bold")
 
     story = []
     story.append(Paragraph(clinic_name, s_title))
@@ -623,9 +625,9 @@ async def export_finance_pdf(current_user: dict = Depends(get_current_user)):
     ]
     kt = Table(kpi, colWidths=[80*mm, 80*mm])
     kt.setStyle(TableStyle([
-        ("ROWBACKGROUNDS", (0,0), (-1,-1), [_HexColor("#f0fdf4"), _HexColor("#fef2f2"), _HexColor("#ecfdf5")]),
-        ("BOX",           (0,0), (-1,-1),  0.5, colors.lightgrey),
-        ("INNERGRID",     (0,0), (-1,-1),  0.3, colors.lightgrey),
+        ("ROWBACKGROUNDS", (0,0), (-1,-1), [HexColor("#f0fdf4"), HexColor("#fef2f2"), HexColor("#ecfdf5")]),
+        ("BOX",           (0,0), (-1,-1),  0.5, rl_colors.lightgrey),
+        ("INNERGRID",     (0,0), (-1,-1),  0.3, rl_colors.lightgrey),
         ("TOPPADDING",    (0,0), (-1,-1),  5),
         ("BOTTOMPADDING", (0,0), (-1,-1),  5),
         ("LEFTPADDING",   (0,0), (-1,-1),  8),
@@ -664,9 +666,9 @@ async def export_finance_pdf(current_user: dict = Depends(get_current_user)):
             ("TEXTCOLOR",     (0,0), (-1,0),  white),
             ("FONTNAME",      (0,0), (-1,0),  "Helvetica-Bold"),
             ("FONTSIZE",      (0,0), (-1,0),  8.5),
-            ("ROWBACKGROUNDS",(0,1), (-1,-1), [white, _HexColor("#f9fafb")]),
-            ("INNERGRID",     (0,0), (-1,-1), 0.25, colors.lightgrey),
-            ("BOX",           (0,0), (-1,-1), 0.5,  colors.grey),
+            ("ROWBACKGROUNDS",(0,1), (-1,-1), [white, HexColor("#f9fafb")]),
+            ("INNERGRID",     (0,0), (-1,-1), 0.25, rl_colors.lightgrey),
+            ("BOX",           (0,0), (-1,-1), 0.5,  rl_colors.grey),
             ("TOPPADDING",    (0,0), (-1,-1), 4),
             ("BOTTOMPADDING", (0,0), (-1,-1), 4),
             ("LEFTPADDING",   (0,0), (-1,-1), 5),
@@ -676,11 +678,11 @@ async def export_finance_pdf(current_user: dict = Depends(get_current_user)):
         story.append(tbl)
 
     story.append(Spacer(1, 8*mm))
-    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.lightgrey))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=rl_colors.lightgrey))
     story.append(Spacer(1, 2*mm))
     story.append(Paragraph(
         f"Gerado em {now.strftime('%d/%m/%Y as %H:%M')} por {current_user.get('name','Sistema')}",
-        sty("fn", fontSize=7, textColor=colors.grey, alignment=TA_CENTER)
+        sty("fn", fontSize=7, textColor=rl_colors.grey, alignment=TA_CENTER)
     ))
     doc.build(story)
     buf.seek(0)
@@ -1432,12 +1434,6 @@ async def generate_consent_link(payload: ConsentLinkCreate, current_user: dict =
 
 async def build_consent_pdf(consent: dict, settings: dict):
     """Gera o PDF do termo de consentimento usando letterhead_config do banco."""
-    from reportlab.lib.colors import HexColor as _HexColor, black, Color
-    from reportlab.platypus import Table, TableStyle, HRFlowable
-    from reportlab.lib.styles import ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
-    from reportlab.lib import colors
-
     lh = (settings or {}).get("letterhead_config", {})
 
     ml = lh.get("margin_left",   20) * mm
@@ -1446,8 +1442,8 @@ async def build_consent_pdf(consent: dict, settings: dict):
     mb = lh.get("margin_bottom", 15) * mm
 
     raw_color = lh.get("header_color", "#1a3a1a")
-    try:    h_color = _HexColor(raw_color)
-    except: h_color = _HexColor("#1a3a1a")
+    try:    h_color = HexColor(raw_color)
+    except: h_color = HexColor("#1a3a1a")
 
     fs_title    = lh.get("font_size_title",    16)
     fs_subtitle = lh.get("font_size_subtitle", 10)
@@ -1489,7 +1485,7 @@ async def build_consent_pdf(consent: dict, settings: dict):
                 pass
         c.saveState()
         c.setFont("Helvetica", fs_legal)
-        c.setFillColor(colors.grey)
+        c.setFillColor(rl_colors.grey)
         bot = mb - 2 * mm
         c.line(ml, bot, A4[0] - mr, bot)
         c.drawCentredString(A4[0] / 2, bot - 5 * mm, footer_text)
@@ -1506,7 +1502,7 @@ async def build_consent_pdf(consent: dict, settings: dict):
 
     s_clinic  = sty("cln", fontSize=fs_title,    textColor=h_color, fontName="Helvetica-Bold", alignment=TA_CENTER, spaceAfter=1*mm)
     s_sub     = sty("sub", fontSize=fs_subtitle, textColor=h_color, alignment=TA_CENTER, spaceAfter=0.5*mm)
-    s_addr    = sty("adr", fontSize=fs_small,    textColor=colors.grey, alignment=TA_CENTER)
+    s_addr    = sty("adr", fontSize=fs_small,    textColor=rl_colors.grey, alignment=TA_CENTER)
     s_title   = sty("ttl", fontSize=fs_title,    fontName="Helvetica-Bold", alignment=TA_CENTER, spaceAfter=sp_title)
     s_proc    = sty("prc", fontSize=fs_subtitle, textColor=h_color, fontName="Helvetica-Bold", alignment=TA_CENTER, spaceAfter=sp_title)
     s_section = sty("sec", fontSize=fs_section,  textColor=h_color, fontName="Helvetica-Bold", spaceBefore=sp_between, spaceAfter=sp_section)
@@ -1527,7 +1523,7 @@ async def build_consent_pdf(consent: dict, settings: dict):
 
     story.append(Paragraph("TERMO DE CONSENTIMENTO", s_title))
     story.append(Paragraph(f"Procedimento: {consent.get('procedure_name','')}", s_proc))
-    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.lightgrey))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=rl_colors.lightgrey))
     story.append(Spacer(1, sp_title))
 
     story.append(Paragraph("DADOS DO PACIENTE", s_section))
@@ -1546,7 +1542,7 @@ async def build_consent_pdf(consent: dict, settings: dict):
         ("VALIGN",        (0,0), (-1,-1), "TOP"),
         ("BOTTOMPADDING", (0,0), (-1,-1), 3),
         ("TOPPADDING",    (0,0), (-1,-1), 3),
-        ("LINEBELOW",     (0,-1),(-1,-1), 0.4, colors.lightgrey),
+        ("LINEBELOW",     (0,-1),(-1,-1), 0.4, rl_colors.lightgrey),
     ]))
     story.append(pt)
     story.append(Spacer(1, sp_between))
@@ -1578,13 +1574,13 @@ async def build_consent_pdf(consent: dict, settings: dict):
             sty("sig_lbl", fontSize=fs_small, alignment=TA_CENTER)))
 
     story.append(Spacer(1, sp_between))
-    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.lightgrey))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=rl_colors.lightgrey))
     story.append(Spacer(1, 2*mm))
     story.append(Paragraph(
         "Este documento foi gerado eletronicamente e possui validade juridica conforme "
         "a Lei 14.063/2020 e MP 2.200-2/2001. IP, geolocalizacao, CPF, data/hora e "
         "navegador foram registrados para autenticacao.",
-        sty("leg", fontSize=fs_legal, textColor=colors.grey, alignment=TA_CENTER)
+        sty("leg", fontSize=fs_legal, textColor=rl_colors.grey, alignment=TA_CENTER)
     ))
 
     doc.build(story, onFirstPage=_bg_footer, onLaterPages=_bg_footer)
