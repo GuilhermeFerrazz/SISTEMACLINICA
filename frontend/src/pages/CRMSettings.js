@@ -197,6 +197,15 @@ const CRMSettings = () => {
     }
   };
 
+  const fetchProcedures = async () => {
+    try {
+      const { data } = await axios.get(`${API}/procedures`, { withCredentials: true });
+      setProcedures(data);
+    } catch (error) {
+      // não crítico
+    }
+  };
+
   const fetchLetterheadConfig = async () => {
     try {
       const { data } = await axios.get(`${API}/settings`, { withCredentials: true });
