@@ -1548,8 +1548,12 @@ async def build_consent_pdf(consent: dict, settings: dict):
     # Patient data
     story.append(Paragraph("DADOS DO PACIENTE", s_section))
     tdata = [[Paragraph("Paciente:", s_label), Paragraph(consent.get("patient_name") or "", s_value)]]
-    if consent.get("patient_cpf"):
-        tdata.append([Paragraph("CPF:", s_label), Paragraph(str(consent["patient_cpf"]), s_value)])
+    
+    # Use 'cpf' (signed) or 'patient_cpf' (original)
+    display_cpf = consent.get("cpf") or consent.get("patient_cpf") or ""
+    if display_cpf:
+        tdata.append([Paragraph("CPF:", s_label), Paragraph(str(display_cpf), s_value)])
+        
     if consent.get("signed_at"):
         try:
             from datetime import datetime as _dt
@@ -1587,7 +1591,9 @@ async def build_consent_pdf(consent: dict, settings: dict):
             sig_tmp.write(_b64.b64decode(enc))
             sig_tmp.close()
             story.append(RLImage(sig_tmp.name, width=80 * mm, height=25 * mm))
-            _os.unlink(sig_tmp.name)
+            # O arquivo sera deletado no final da funcao, junto com outros temporarios
+            if "tmp_files" not in locals(): tmp_files = []
+            tmp_files.append(sig_tmp.name)
         except Exception:
             pass
     elif consent.get("signed_at"):
@@ -1608,10 +1614,14 @@ async def build_consent_pdf(consent: dict, settings: dict):
 
     doc.build(story, onFirstPage=_bg_footer, onLaterPages=_bg_footer)
 
-    # Cleanup background temp file
-    if bg_tmp_path:
+    # Cleanup temp files
+    to_clean = []
+    if bg_tmp_path: to_clean.append(bg_tmp_path)
+    if "tmp_files" in locals(): to_clean.extend(tmp_files)
+    
+    for fpath in to_clean:
         try:
-            _os.unlink(bg_tmp_path)
+            _os.unlink(fpath)
         except Exception:
             pass
 
