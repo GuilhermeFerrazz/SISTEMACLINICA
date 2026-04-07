@@ -1345,6 +1345,10 @@ async def sign_consent_public(token: str, request: Request):
     consent = await db.consents.find_one({"token": token})
     if not consent:
         raise HTTPException(status_code=404, detail="Link inválido")
+    # Captura o IP do cliente
+    forwarded = request.headers.get("X-Forwarded-For")
+    client_ip = forwarded.split(",")[0] if forwarded else request.client.host
+
     await db.consents.update_one({"token": token}, {"$set": {
         "status": "signed",
         "signed_at": datetime.now(timezone.utc).isoformat(),
@@ -1352,7 +1356,9 @@ async def sign_consent_public(token: str, request: Request):
         "signature_image": data.get("signature_image"),
         "latitude": data.get("latitude"),
         "longitude": data.get("longitude"),
-        "user_agent": data.get("user_agent")
+        "accuracy": data.get("accuracy"),
+        "user_agent": data.get("user_agent"),
+        "ip_address": client_ip
     }})
     await db.patients.update_one({"id": consent.get("patient_id")}, {"$set": {
         "consent_signed": True,
@@ -1489,19 +1495,32 @@ async def build_consent_pdf(consent: dict, settings: dict):
                 c.saveState()
                 c.drawImage(bg_tmp_path, 0, 0, width=A4[0], height=A4[1],
                             preserveAspectRatio=False, mask="auto")
-                # White overlay using setFillColorRGB with alpha via transparency
                 c.setFillColor(Color(1, 1, 1, alpha=0.55))
                 c.rect(0, 0, A4[0], A4[1], fill=1, stroke=0)
                 c.restoreState()
-            except Exception:
-                pass
+            except Exception: pass
+
+        # Custom Footer Image/Brand
+        logo_url = (settings or {}).get("logo_url")
+        if logo_url:
+            # We don't download here to avoid blocking, but if it was local we'd use it.
+            pass
+
         # Footer line + text
         c.saveState()
         c.setFont("Helvetica", fs_legal)
-        c.setFillGray(0.5)
-        bot = mb - 2 * mm
-        c.line(ml, bot, A4[0] - mr, bot)
-        c.drawCentredString(A4[0] / 2, bot - 5 * mm, footer_text)
+        c.setFillGray(0.4)
+        bot = mb - 5 * mm
+        c.setStrokeColor(rl_colors.lightgrey)
+        c.setLineWidth(0.5)
+        c.line(ml, bot + 2*mm, A4[0] - mr, bot + 2*mm)
+        c.drawCentredString(A4[0] / 2, bot - 3 * mm, footer_text)
+        
+        # Clinic info in footer
+        info_str = f"{clinic_name}"
+        if cro: info_str += f" | CRO: {cro}"
+        if address_val: info_str += f" | {address_val}"
+        c.drawCentredString(A4[0] / 2, bot - 7 * mm, info_str)
         c.restoreState()
 
     buf = BytesIO()
@@ -1556,8 +1575,11 @@ async def build_consent_pdf(consent: dict, settings: dict):
         
     if consent.get("signed_at"):
         try:
-            from datetime import datetime as _dt
-            sfmt = _dt.fromisoformat(str(consent["signed_at"]).replace("Z", "+00:00")).strftime("%d/%m/%Y %H:%M")
+            from datetime import datetime as _dt, timedelta as _td
+            # Converte para Fuso de Brasília (UTC-3)
+            dt_utc = _dt.fromisoformat(str(consent["signed_at"]).replace("Z", "+00:00"))
+            dt_brt = dt_utc - _td(hours=3)
+            sfmt = dt_brt.strftime("%d/%m/%Y às %H:%M:%S BRT")
         except Exception:
             sfmt = str(consent["signed_at"])
         tdata.append([Paragraph("Assinado em:", s_label), Paragraph(sfmt, s_value)])
@@ -1602,15 +1624,70 @@ async def build_consent_pdf(consent: dict, settings: dict):
         story.append(Paragraph("Assinatura do Paciente",
             sty("sig_lbl", fontSize=fs_small, alignment=TA_CENTER)))
 
+    # --- DADOS DE AUTENTICAÇÃO (VALIDADE JURÍDICA) ---
+    if consent.get("signed_at"):
+        story.append(Spacer(1, sp_between * 2))
+        story.append(Paragraph("DADOS DE AUTENTICAÇÃO (VALIDADE JURÍDICA)", s_section))
+        
+        # QR Code Generation
+        token = consent.get("token", "")
+        base_url = _os.environ.get("FRONTEND_URL", "https://app.drguilhermeferraz.com")
+        verify_url = f"{base_url}/assinar/{token}"
+        
+        qr = qrcode.QRCode(version=1, box_size=10, border=0)
+        qr.add_data(verify_url)
+        qr.make(fit=True)
+        qr_img = qr.make_image(fill_color="black", back_color="white")
+        
+        qr_buf = BytesIO()
+        qr_img.save(qr_buf, format='PNG')
+        qr_buf.seek(0)
+        
+        # Authentication Data Table
+        lat = consent.get("latitude")
+        lon = consent.get("longitude")
+        acc = consent.get("accuracy")
+        geo = f"{lat}, {lon}" if lat and lon else "Não disponível"
+        if acc: geo += f" (Precisão: {acc}m)"
+        
+        auth_data = [
+            [Paragraph("IP do Dispositivo:", s_label), Paragraph(consent.get("ip_address") or "Não registrado", s_value)],
+            [Paragraph("CPF Informado:", s_label),     Paragraph(str(display_cpf), s_value)],
+            [Paragraph("Geolocalização:", s_label),    Paragraph(geo, s_value)],
+            [Paragraph("Data/Hora:", s_label),         Paragraph(sfmt, s_value)],
+            [Paragraph("User-Agent:", s_label),        Paragraph(consent.get("user_agent") or "Não disponível", s_value)],
+            [Paragraph("Token:", s_label),             Paragraph(token, s_value)],
+        ]
+        
+        # Table with QR Code on the right
+        qr_rl_img = RLImage(qr_buf, width=35*mm, height=35*mm)
+        
+        # Main Auth Table
+        main_auth_table = Table([
+            [Table(auth_data, colWidths=[35*mm, 105*mm]), qr_rl_img]
+        ], colWidths=[145*mm, 35*mm])
+        
+        main_auth_table.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('ALIGN', (1,0), (1,0), 'RIGHT'),
+        ]))
+        
+        story.append(main_auth_table)
+        story.append(Spacer(1, 5*mm))
+        story.append(Paragraph("Escaneie o QR Code para verificar a autenticidade deste documento.", 
+                     sty("qr_hint", fontSize=fs_small, textColor=rl_colors.grey, alignment=TA_CENTER)))
+
     # Legal notice
     story.append(Spacer(1, sp_between))
     story.append(HRFlowable(width="100%", thickness=0.5, color=rl_colors.lightgrey))
     story.append(Spacer(1, 2 * mm))
-    story.append(Paragraph(
-        "Este documento foi gerado eletronicamente e possui validade juridica conforme "
-        "a Lei 14.063/2020 e MP 2.200-2/2001.",
-        sty("leg", fontSize=fs_legal, textColor=rl_colors.grey, alignment=TA_CENTER)
-    ))
+    
+    verify_link = f"{base_url}/assinar/{token}" if consent.get("signed_at") else ""
+    legal_text = "Este documento foi gerado eletronicamente e possui validade juridica conforme a Lei 14.063/2020 e MP 2.200-2/2001."
+    if verify_link:
+        legal_text += f"<br/>Verificação: <link href='{verify_link}' color='blue'>{verify_link}</link>"
+        
+    story.append(Paragraph(legal_text, sty("leg", fontSize=fs_legal, textColor=rl_colors.grey, alignment=TA_CENTER)))
 
     doc.build(story, onFirstPage=_bg_footer, onLaterPages=_bg_footer)
 
