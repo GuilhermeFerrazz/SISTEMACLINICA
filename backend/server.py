@@ -304,9 +304,13 @@ def _get_template_msg(tmpl: dict | None, tmpl_type: str) -> str:
     """Recupera o template do banco ou o padrão, garantindo codificação correta."""
     if tmpl:
         msg = tmpl.get("message", "")
-        # Se a mensagem existir e NÃO contiver o caractere de erro , ela é válida
+        # Se a mensagem existir e não estiver visivelmente quebrada
         if msg and "\ufffd" not in msg:
-            return msg
+            # Tenta normalizar caso tenha vindo de um sistema com codificação diferente
+            try:
+                return unicodedata.normalize('NFC', msg)
+            except Exception:
+                return msg
             
     # Caso contrário (vazia ou corrompida), retorna o template padrão com emojis corretos
     return _DEFAULT_TEMPLATES.get(tmpl_type, "")
@@ -477,9 +481,17 @@ async def get_message_templates(current_user: dict = Depends(get_current_user)):
         return defaults
     return templates
 
+import unicodedata
+
 @api_router.put("/message-templates/{id}")
 async def update_template(id: str, request: Request, current_user: dict = Depends(get_current_user)):
     data = await request.json()
+    
+    # Normalização Unicode para garantir que emojis sejam salvos de forma robusta
+    if "message" in data and isinstance(data["message"], str):
+        # Normaliza para NFC (forma composta padrão)
+        data["message"] = unicodedata.normalize('NFC', data["message"])
+        
     await db.message_templates.update_one({"id": id}, {"$set": data})
     return {"message": "Template atualizado"}
 
