@@ -21,6 +21,69 @@ import { toast } from 'sonner';
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
+// Componente QRScanner isolado para garantir estabilidade dentro do Dialog
+const QRScanner = ({ onScanSuccess, onClose }) => {
+  const scannerRef = useRef(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let html5QrCode;
+    
+    const startScanner = async () => {
+      try {
+        // Aguarda um pequeno tempo para garantir que o DOM está pronto
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        const element = document.getElementById('qr-reader-records-inner');
+        if (!element) return;
+
+        html5QrCode = new Html5Qrcode("qr-reader-records-inner");
+        scannerRef.current = html5QrCode;
+
+        const config = { 
+          fps: 10, 
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.0 
+        };
+
+        await html5QrCode.start(
+          { facingMode: "environment" }, 
+          config, 
+          (decodedText) => {
+            onScanSuccess(decodedText);
+          },
+          () => {} // Ignorar erros de scan contínuos
+        );
+        setLoading(false);
+      } catch (err) {
+        console.error("Erro ao iniciar câmera:", err);
+        toast.error("Erro ao acessar câmera. Verifique as permissões.");
+        onClose();
+      }
+    };
+
+    startScanner();
+
+    return () => {
+      if (html5QrCode && html5QrCode.isScanning) {
+        html5QrCode.stop().catch(e => console.error("Erro ao parar no cleanup:", e));
+      }
+    };
+  }, [onScanSuccess, onClose]);
+
+  return (
+    <div className="relative bg-black/5 rounded-lg overflow-hidden min-h-[300px] flex items-center justify-center border border-dashed border-border/60">
+      {loading && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/80 z-10">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-2"></div>
+          <p className="text-xs text-muted-foreground">Iniciando câmera...</p>
+        </div>
+      )}
+      <div id="qr-reader-records-inner" className="w-full"></div>
+    </div>
+  );
+};
+
 const MedicalRecords = () => {
   const [patients, setPatients] = useState([]);
   const [filteredPatients, setFilteredPatients] = useState([]);
@@ -38,7 +101,7 @@ const MedicalRecords = () => {
   const [viewingPhoto, setViewingPhoto] = useState('');
   const [isCompressing, setIsCompressing] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
-  const [scannerInstance, setScannerInstance] = useState(null);
+  // scannerInstance removido em favor do componente isolado QRScanner
   const beforeInputRef = useRef(null);
   const afterInputRef = useRef(null);
   const [formData, setFormData] = useState({
@@ -192,66 +255,9 @@ const MedicalRecords = () => {
     setIsScannerOpen(true);
   };
 
-  const closeScanner = async () => {
-    if (scannerInstance) {
-      try {
-        if (scannerInstance.isScanning) {
-          await scannerInstance.stop();
-        }
-        await scannerInstance.clear();
-      } catch (e) {
-        console.error('Erro ao fechar scanner:', e);
-      }
-      setScannerInstance(null);
-    }
+  const closeScanner = () => {
     setIsScannerOpen(false);
   };
-
-  // Efeito para gerenciar a inicialização da câmera quando a modal abrir
-  useEffect(() => {
-    let html5QrCode;
-    
-    if (isScannerOpen) {
-      // Pequeno delay para garantir que o Dialog do Radix montou o elemento no DOM
-      const timer = setTimeout(async () => {
-        const element = document.getElementById('qr-reader-records');
-        if (!element) return;
-
-        try {
-          html5QrCode = new Html5Qrcode("qr-reader-records");
-          setScannerInstance(html5QrCode);
-
-          const config = { 
-            fps: 10, 
-            qrbox: { width: 250, height: 250 },
-            aspectRatio: 1.0 
-          };
-
-          await html5QrCode.start(
-            { facingMode: "environment" }, 
-            config, 
-            (decodedText) => {
-              handleScanSuccess(decodedText);
-            },
-            (errorMessage) => {
-              // Erros de scan contínuos ignorados
-            }
-          );
-        } catch (err) {
-          console.error("Erro ao iniciar câmera:", err);
-          toast.error("Não foi possível acessar a câmera. Verifique as permissões.");
-          setIsScannerOpen(false);
-        }
-      }, 500);
-
-      return () => {
-        clearTimeout(timer);
-        if (html5QrCode && html5QrCode.isScanning) {
-          html5QrCode.stop().catch(e => console.error("Erro ao parar no cleanup:", e));
-        }
-      };
-    }
-  }, [isScannerOpen]);
 
   // Motor de Compressão Web para não estourar o banco do MongoDB
   const compressImage = (file) => {
@@ -581,9 +587,14 @@ const MedicalRecords = () => {
               <QrCode className="w-5 h-5 text-primary" /> Escanear Produto
             </DialogTitle>
           </DialogHeader>
-          <div className="bg-black/5 rounded-lg p-2 min-h-[300px] flex items-center justify-center border border-dashed border-border/60">
-            <div id="qr-reader-records" className="w-full overflow-hidden rounded-lg"></div>
-          </div>
+          
+          {isScannerOpen && (
+            <QRScanner 
+              onScanSuccess={handleScanSuccess} 
+              onClose={closeScanner} 
+            />
+          )}
+          
           <Button variant="outline" onClick={closeScanner} className="w-full mt-4">Fechar</Button>
         </DialogContent>
       </Dialog>
