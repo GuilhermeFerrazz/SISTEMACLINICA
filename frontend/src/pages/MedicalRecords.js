@@ -189,18 +189,39 @@ const MedicalRecords = () => {
   };
 
   const openScanner = () => {
+    // Limpa qualquer scanner anterior se houver
+    if (scanner) {
+      scanner.clear().catch(e => console.error('Erro ao limpar scanner anterior:', e));
+      setScanner(null);
+    }
+    
     setIsScannerOpen(true);
+    
+    // O delay de 800ms garante que o Dialog do Shadcn terminou a animação de abertura
+    // e o elemento 'qr-reader-records' está montado e visível no DOM.
     setTimeout(() => {
+      const element = document.getElementById('qr-reader-records');
+      if (!element) {
+        console.error('Elemento qr-reader-records não encontrado no DOM');
+        return;
+      }
+      
       const html5QrcodeScanner = new Html5QrcodeScanner(
         'qr-reader-records',
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        false
+        { 
+          fps: 10, 
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.0
+        },
+        /* verbose= */ false
       );
+      
       html5QrcodeScanner.render(handleScanSuccess, (error) => {
         // Ignorar erros de scan contínuos para não poluir o console
       });
+      
       setScanner(html5QrcodeScanner);
-    }, 500);
+    }, 800);
   };
 
   const closeScanner = () => {
