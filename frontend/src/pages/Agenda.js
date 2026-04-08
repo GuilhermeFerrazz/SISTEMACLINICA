@@ -25,6 +25,12 @@ const Agenda = () => {
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isQuickPatientOpen, setIsQuickPatientOpen] = useState(false);
+  const [quickPatientData, setQuickPatientData] = useState({
+    name: '',
+    phone: '',
+    cpf: ''
+  });
   const [formData, setFormData] = useState({
     patient_id: '',
     procedure_id: '',
@@ -151,6 +157,28 @@ const Agenda = () => {
     }
   };
 
+  const handleQuickPatientSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const { data } = await axios.post(`${API}/patients`, quickPatientData, { withCredentials: true });
+      toast.success('Paciente cadastrado com sucesso!');
+      
+      // Atualiza a lista de pacientes
+      const patientsRes = await axios.get(`${API}/patients`, { withCredentials: true });
+      setPatients(patientsRes.data);
+      
+      // Seleciona o novo paciente no formulário de agendamento
+      setFormData(prev => ({ ...prev, patient_id: data.id }));
+      
+      // Limpa e fecha o modal rápido
+      setQuickPatientData({ name: '', phone: '', cpf: '' });
+      setIsQuickPatientOpen(false);
+    } catch (error) {
+      console.error('Error creating quick patient:', error);
+      toast.error(error.response?.data?.detail || 'Erro ao cadastrar paciente');
+    }
+  };
+
   const changeDate = (days) => {
     const [year, month, day] = selectedDate.split('-').map(Number);
     const date = new Date(year, month - 1, day);
@@ -235,7 +263,18 @@ const Agenda = () => {
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4 mt-4">
                 <div>
-                  <Label>Paciente</Label>
+                  <div className="flex items-center justify-between mb-1">
+                    <Label>Paciente</Label>
+                    <Button 
+                      type="button"
+                      variant="link" 
+                      className="h-auto p-0 text-xs text-primary"
+                      onClick={() => setIsQuickPatientOpen(true)}
+                    >
+                      <Plus className="w-3 h-3 mr-1" />
+                      Cadastrar Novo
+                    </Button>
+                  </div>
                   <Select
                     value={formData.patient_id}
                     onValueChange={(value) => setFormData({ ...formData, patient_id: value })}
@@ -315,6 +354,62 @@ const Agenda = () => {
                 >
                   Criar Agendamento
                 </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
+
+          {/* Quick Patient Dialog */}
+          <Dialog open={isQuickPatientOpen} onOpenChange={setIsQuickPatientOpen}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Cadastro Rápido de Paciente</DialogTitle>
+                <DialogDescription>Cadastre os dados básicos para realizar o agendamento.</DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleQuickPatientSubmit} className="space-y-4 mt-4">
+                <div className="space-y-2">
+                  <Label>Nome Completo</Label>
+                  <Input
+                    required
+                    value={quickPatientData.name}
+                    onChange={(e) => setQuickPatientData({ ...quickPatientData, name: e.target.value })}
+                    placeholder="Nome do paciente"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>WhatsApp / Telefone</Label>
+                    <Input
+                      required
+                      value={quickPatientData.phone}
+                      onChange={(e) => setQuickPatientData({ ...quickPatientData, phone: e.target.value })}
+                      placeholder="(00) 00000-0000"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>CPF (Opcional)</Label>
+                    <Input
+                      value={quickPatientData.cpf}
+                      onChange={(e) => setQuickPatientData({ ...quickPatientData, cpf: e.target.value })}
+                      placeholder="000.000.000-00"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => setIsQuickPatientOpen(false)}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="submit"
+                    className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
+                  >
+                    Cadastrar e Selecionar
+                  </Button>
+                </div>
               </form>
             </DialogContent>
           </Dialog>
