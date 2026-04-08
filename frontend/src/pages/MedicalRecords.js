@@ -206,7 +206,6 @@ const MedicalRecords = () => {
       setScanner(null);
     }
     setIsScannerOpen(false);
-  };;
   };
 
   // Motor de Compressão Web para não estourar o banco do MongoDB
