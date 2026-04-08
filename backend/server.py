@@ -145,7 +145,8 @@ class PatientUpdate(BaseModel):
 class ProductUsage(BaseModel):
     product_id: str
     product_name: str
-    quantity: int
+    quantity: float # Alterado para float para suportar U.I. (frações)
+    unit: str = "un" # 'un' ou 'UI'
     batch_number: Optional[str] = None
 
 class MedicalRecordCreate(BaseModel):
@@ -220,7 +221,8 @@ class ProcedureUpdate(BaseModel):
 class ProductCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     category: str = Field(..., pattern=r'^(injetável|creme|envase|equipamento|outro)$')
-    quantity: int = Field(0, ge=0)
+    quantity: float = Field(0, ge=0) # Alterado para float para U.I.
+    unit: str = "un" # 'un' ou 'UI'
     batch_number: str = Field(..., min_length=1, max_length=100)
     expiration_date: str = Field(..., pattern=r'^\d{4}-\d{2}-\d{2}$')
     supplier: str = Field(..., min_length=1, max_length=200)
@@ -231,7 +233,8 @@ class ProductCreate(BaseModel):
 class ProductUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=200)
     category: Optional[str] = Field(None, pattern=r'^(injetável|creme|envase|equipamento|outro)$')
-    quantity: Optional[int] = Field(None, ge=0)
+    quantity: Optional[float] = Field(None, ge=0) # Alterado para float
+    unit: Optional[str] = None
     batch_number: Optional[str] = Field(None, min_length=1, max_length=100)
     expiration_date: Optional[str] = Field(None, pattern=r'^\d{4}-\d{2}-\d{2}$')
     supplier: Optional[str] = Field(None, min_length=1, max_length=200)
@@ -242,7 +245,7 @@ class ProductUpdate(BaseModel):
 class MovementCreate(BaseModel):
     product_id: str = Field(..., min_length=1)
     type: str = Field(..., pattern=r'^(entrada|saida)$')
-    quantity: int = Field(..., ge=1)
+    quantity: float = Field(..., ge=0.01) # Alterado para float
     notes: Optional[str] = Field(None, max_length=500)
 
 class TransactionCreate(BaseModel):
@@ -675,14 +678,14 @@ async def create_medical_record(record: MedicalRecordCreate, current_user: dict 
     for usage in products_used:
         product_id = usage.get("product_id")
         qty = usage.get("quantity", 0)
-        if product_id and qty > 0:
+        if product_id and float(qty) > 0:
             # Busca o produto para validar estoque
             product = await db.products.find_one({"id": product_id})
             if product:
-                # Atualiza quantidade no estoque
+                # Atualiza quantidade no estoque (usando $inc com valor negativo para float)
                 await db.products.update_one(
                     {"id": product_id},
-                    {"$inc": {"quantity": -qty}}
+                    {"$inc": {"quantity": -float(qty)}}
                 )
                 # Registra a movimentação de saída
                 movement = {
@@ -1098,15 +1101,22 @@ async def get_consumption_report(current_user: dict = Depends(get_current_user))
 
 # ==================== MOVIMENTAÇÕES ====================
 
-@api_router.get("/movements")
+@api_router.get("/inventory/movements")
 async def get_movements(current_user: dict = Depends(get_current_user)):
-    movements = await db.movements.find({}, {"_id": 0}).sort("timestamp", -1).to_list(1000)
-    result = []
-    for m in movements:
-        m["id"] = m.get("id", str(m.get("_id", uuid.uuid4())))
-        m.pop("_id", None)
-        result.append(m)
-    return result
+    return await db.movements.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
+
+@api_router.get("/qr/scan/{code}")
+async def scan_qr_code(code: str, current_user: dict = Depends(get_current_user)):
+    # Tenta encontrar o produto pelo ID ou pelo código de barras (se houver esse campo)
+    # Como o sistema usa UUIDs para IDs, o QR code geralmente contém o ID do produto
+    product = await db.products.find_one({"id": code}, {"_id": 0})
+    if not product:
+        # Tenta buscar por um campo de barcode se existir (opcional, para compatibilidade)
+        product = await db.products.find_one({"barcode": code}, {"_id": 0})
+        
+    if not product:
+        raise HTTPException(status_code=404, detail="Produto não encontrado")
+    return product
 
 @api_router.post("/movements")
 async def create_movement(movement: MovementCreate, current_user: dict = Depends(get_current_user)):
@@ -1114,12 +1124,12 @@ async def create_movement(movement: MovementCreate, current_user: dict = Depends
     if not product:
         raise HTTPException(status_code=404, detail="Produto não encontrado")
     if movement.type == "saida":
-        if product["quantity"] < movement.quantity:
+        if float(product["quantity"]) < float(movement.quantity):
             raise HTTPException(status_code=400, detail="Quantidade insuficiente em estoque")
-        new_qty = product["quantity"] - movement.quantity
+        new_qty = float(product["quantity"]) - float(movement.quantity)
     else:
-        new_qty = product["quantity"] + movement.quantity
-    await db.products.update_one({"qr_code_id": movement.product_id}, {"$set": {"quantity": new_qty}})
+        new_qty = float(product["quantity"]) + float(movement.quantity)
+    await db.products.update_one({"qr_code_id": movement.product_id}, {"$set": {"quantity": round(new_qty, 2)}})
     movement_doc = {
         "id": str(uuid.uuid4()),
         "product_id": movement.product_id,

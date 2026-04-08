@@ -13,7 +13,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   FileText, Plus, Search, User, Calendar, ChevronRight, Clock,
   Camera, Trash2, Download, Pencil, ArrowLeft, Save, Shield,
-  Syringe, Eye, X, ClipboardList, AlertTriangle, ImagePlus
+  Syringe, Eye, X, ClipboardList, AlertTriangle, ImagePlus, QrCode
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -36,14 +36,18 @@ const MedicalRecords = () => {
   const [isPhotoViewOpen, setIsPhotoViewOpen] = useState(false);
   const [viewingPhoto, setViewingPhoto] = useState('');
   const [isCompressing, setIsCompressing] = useState(false);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [scanner, setScanner] = useState(null);
   const beforeInputRef = useRef(null);
   const afterInputRef = useRef(null);
   const [formData, setFormData] = useState({
     procedure_id: '', procedure_name: '', date: new Date().toISOString().split('T')[0],
     chief_complaint: '', clinical_notes: '', diagnosis: '', treatment_plan: '',
-    products_applied: [], techniques_used: '', observations: '',
+    products_used: [], // Alterado de products_applied para products_used para manter consistência
+    techniques_used: '', observations: '',
     photos_before: [], photos_after: [],
-    evolution_notes: '', next_session_notes: '', next_session_date: ''
+    evolution_notes: '', next_session_notes: '', next_session_date: '',
+    payment_amount: '', payment_method: '', payment_status: 'paid'
   });
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -98,7 +102,7 @@ const MedicalRecords = () => {
     setFormData({
       procedure_id: '', procedure_name: '', date: new Date().toISOString().split('T')[0],
       chief_complaint: '', clinical_notes: '', diagnosis: '', treatment_plan: '',
-      products_applied: [], products_used: [], techniques_used: '', observations: '',
+      products_used: [], techniques_used: '', observations: '',
       photos_before: [], photos_after: [],
       evolution_notes: '', next_session_notes: '', next_session_date: '',
       payment_amount: '', payment_method: '', payment_status: 'paid'
@@ -123,12 +127,15 @@ const MedicalRecords = () => {
       const existing = prev.products_used.find(p => p.product_id === productId);
       if (existing) return prev;
       
+      const isUI = product.unit === 'UI' || product.name.toLowerCase().includes('botox') || product.name.toLowerCase().includes('toxina');
+      
       return {
         ...prev,
         products_used: [...prev.products_used, {
           product_id: product.id,
           product_name: product.name,
           quantity: 1,
+          unit: isUI ? 'UI' : 'un',
           batch_number: product.batch_number
         }]
       };
@@ -143,11 +150,63 @@ const MedicalRecords = () => {
   };
 
   const updateProductQty = (index, qty) => {
-    setFormData(prev => {
-      const newList = [...prev.products_used];
-      newList[index].quantity = parseInt(qty) || 1;
-      return { ...prev, products_used: newList };
-    });
+    const newProducts = [...formData.products_used];
+    newProducts[index].quantity = parseFloat(qty) || 0;
+    setFormData(prev => ({ ...prev, products_used: newProducts }));
+  };
+
+  const handleScanSuccess = async (decodedText) => {
+    try {
+      const { data } = await axios.get(`${API}/qr/scan/${decodedText}`, { withCredentials: true });
+      const product = data;
+      const isUI = product.unit === 'UI' || product.name.toLowerCase().includes('botox') || product.name.toLowerCase().includes('toxina');
+      
+      setFormData(prev => {
+        const existing = prev.products_used.find(p => p.product_id === product.id);
+        if (existing) return prev;
+        return {
+          ...prev,
+          products_used: [
+            ...prev.products_used,
+            { 
+              product_id: product.id, 
+              product_name: product.name, 
+              quantity: 1, 
+              unit: isUI ? 'UI' : 'un',
+              batch_number: product.batch_number 
+            }
+          ]
+        };
+      });
+      
+      toast.success(`${product.name} adicionado!`);
+      closeScanner();
+    } catch (error) {
+      console.error('Error scanning QR code:', error);
+      toast.error('Produto não encontrado');
+    }
+  };
+
+  const openScanner = () => {
+    setIsScannerOpen(true);
+    setTimeout(() => {
+      const html5QrcodeScanner = new window.Html5QrcodeScanner(
+        'qr-reader-records',
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        false
+      );
+      html5QrcodeScanner.render(handleScanSuccess, () => {});
+      setScanner(html5QrcodeScanner);
+    }, 500);
+  };
+
+  const closeScanner = () => {
+    if (scanner) {
+      scanner.clear().catch(e => console.error(e));
+      setScanner(null);
+    }
+    setIsScannerOpen(false);
+  };;
   };
 
   // Motor de Compressão Web para não estourar o banco do MongoDB
@@ -280,11 +339,15 @@ const MedicalRecords = () => {
       procedure_id: record.procedure_id, procedure_name: record.procedure_name,
       date: record.date, chief_complaint: record.chief_complaint || '',
       clinical_notes: record.clinical_notes || '', diagnosis: record.diagnosis || '',
-      treatment_plan: record.treatment_plan || '', products_applied: record.products_applied || [],
+      treatment_plan: record.treatment_plan || '', 
+      products_used: record.products_used || [],
       techniques_used: record.techniques_used || '', observations: record.observations || '',
       photos_before: record.photos_before || [], photos_after: record.photos_after || [],
       evolution_notes: record.evolution_notes || '', next_session_notes: record.next_session_notes || '',
-      next_session_date: record.next_session_date || ''
+      next_session_date: record.next_session_date || '',
+      payment_amount: record.payment_amount || '',
+      payment_method: record.payment_method || '',
+      payment_status: record.payment_status || 'paid'
     });
     setIsEditOpen(true);
   };
@@ -415,18 +478,23 @@ const MedicalRecords = () => {
           <Label className="flex items-center gap-2">
             <Plus className="w-4 h-4 text-primary" /> Produtos Utilizados (Baixa Automática)
           </Label>
-          <Select onValueChange={addProductUsage}>
-            <SelectTrigger className="w-[200px] h-8 text-xs">
-              <SelectValue placeholder="Adicionar produto..." />
-            </SelectTrigger>
-            <SelectContent>
-              {products.filter(p => p.quantity > 0).map(p => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.name} (Lote: {p.batch_number})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={openScanner} className="h-8 gap-2 text-xs">
+              <QrCode className="w-3 h-3" /> Escanear
+            </Button>
+            <Select onValueChange={addProductUsage}>
+              <SelectTrigger className="w-[180px] h-8 text-xs">
+                <SelectValue placeholder="Selecionar..." />
+              </SelectTrigger>
+              <SelectContent>
+                {products.filter(p => p.quantity > 0).map(p => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name} (Lote: {p.batch_number})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
         
         {formData.products_used.length > 0 ? (
@@ -439,13 +507,14 @@ const MedicalRecords = () => {
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-2">
-                    <Label className="text-xs">Qtd:</Label>
+                    <Label className="text-xs">{p.unit === 'UI' ? 'U.I.:' : 'Qtd:'}</Label>
                     <Input 
                       type="number" 
-                      className="w-16 h-8 text-center" 
+                      step={p.unit === 'UI' ? '0.1' : '1'}
+                      className="w-20 h-8 text-center" 
                       value={p.quantity} 
                       onChange={e => updateProductQty(i, e.target.value)}
-                      min="1"
+                      min="0.1"
                     />
                   </div>
                   <Button variant="ghost" size="sm" onClick={() => removeProductUsage(i)} className="text-destructive h-8 w-8 p-0">
@@ -459,6 +528,19 @@ const MedicalRecords = () => {
           <p className="text-xs text-muted-foreground italic bg-secondary/10 p-2 rounded text-center">Nenhum produto vinculado a este atendimento</p>
         )}
       </div>
+
+      {/* Scanner Dialog */}
+      <Dialog open={isScannerOpen} onOpenChange={closeScanner}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <QrCode className="w-5 h-5 text-primary" /> Escanear Produto
+            </DialogTitle>
+          </DialogHeader>
+          <div id="qr-reader-records" className="w-full overflow-hidden rounded-lg"></div>
+          <Button variant="outline" onClick={closeScanner} className="w-full mt-4">Fechar</Button>
+        </DialogContent>
+      </Dialog>
       <div>
         <Label>Observações</Label>
         <Textarea value={formData.observations} onChange={e => setFormData(prev => ({...prev, observations: e.target.value}))}
@@ -745,8 +827,8 @@ const MedicalRecords = () => {
                       <div className="space-y-1">
                         {selectedRecord.products_used.map((p, i) => (
                           <div key={i} className="flex justify-between text-sm">
-                            <span>{p.product_name} <span className="text-xs text-muted-foreground">(Lote: {p.batch_number})</span></span>
-                            <span className="font-medium">x{p.quantity}</span>
+	                            <span>{p.product_name} <span className="text-xs text-muted-foreground">(Lote: {p.batch_number})</span></span>
+	                            <span className="font-medium">{p.quantity} {p.unit || 'un'}</span>
                           </div>
                         ))}
                       </div>
