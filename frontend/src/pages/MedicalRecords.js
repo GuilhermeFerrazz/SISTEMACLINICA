@@ -189,39 +189,17 @@ const MedicalRecords = () => {
   };
 
   const openScanner = () => {
-    // Limpa qualquer scanner anterior se houver
-    if (scanner) {
-      scanner.clear().catch(e => console.error('Erro ao limpar scanner anterior:', e));
-      setScanner(null);
-    }
-    
     setIsScannerOpen(true);
-    
-    // O delay de 800ms garante que o Dialog do Shadcn terminou a animação de abertura
-    // e o elemento 'qr-reader-records' está montado e visível no DOM.
+    // Reduzimos o delay para 400ms, o suficiente para o Radix montar o Dialog
     setTimeout(() => {
-      const element = document.getElementById('qr-reader-records');
-      if (!element) {
-        console.error('Elemento qr-reader-records não encontrado no DOM');
-        return;
-      }
-      
       const html5QrcodeScanner = new Html5QrcodeScanner(
         'qr-reader-records',
-        { 
-          fps: 10, 
-          qrbox: { width: 250, height: 250 },
-          aspectRatio: 1.0
-        },
-        /* verbose= */ false
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        false
       );
-      
-      html5QrcodeScanner.render(handleScanSuccess, (error) => {
-        // Ignorar erros de scan contínuos para não poluir o console
-      });
-      
+      html5QrcodeScanner.render(handleScanSuccess, () => {});
       setScanner(html5QrcodeScanner);
-    }, 800);
+    }, 400);
   };
 
   const closeScanner = () => {
@@ -553,14 +531,16 @@ const MedicalRecords = () => {
       </div>
 
       {/* Scanner Dialog */}
-      <Dialog open={isScannerOpen} onOpenChange={closeScanner}>
+      <Dialog open={isScannerOpen} onOpenChange={(open) => !open && closeScanner()}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <QrCode className="w-5 h-5 text-primary" /> Escanear Produto
             </DialogTitle>
           </DialogHeader>
-          <div id="qr-reader-records" className="w-full overflow-hidden rounded-lg"></div>
+          <div className="bg-black/5 rounded-lg p-2 min-h-[300px] flex items-center justify-center border border-dashed border-border/60">
+            <div id="qr-reader-records" className="w-full overflow-hidden rounded-lg"></div>
+          </div>
           <Button variant="outline" onClick={closeScanner} className="w-full mt-4">Fechar</Button>
         </DialogContent>
       </Dialog>
