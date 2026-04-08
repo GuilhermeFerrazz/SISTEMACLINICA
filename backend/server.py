@@ -14,6 +14,7 @@ from datetime import datetime, timezone, timedelta
 from bson import ObjectId
 from urllib.parse import quote
 from io import BytesIO
+from collections import defaultdict
 import requests
 import boto3
 import mimetypes
@@ -32,10 +33,28 @@ from reportlab.lib.colors import HexColor, black, white, Color
 from reportlab.lib import colors as rl_colors
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-    HRFlowable, Image as RLImage
+    HRFlowable, Image as RLImage, Flowable as _Flowable
 )
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_RIGHT
+
+# Finance PDF Constants
+_C_GREEN_DARK  = HexColor("#1a3a2a")
+_C_GREEN_MID   = HexColor("#2d6a4f")
+_C_GREEN_LIGHT = HexColor("#40916c")
+_C_GREEN_PALE  = HexColor("#d8f3dc")
+_C_TEAL        = HexColor("#52b788")
+_C_RED_DARK    = HexColor("#c1121f")
+_C_RED_LIGHT   = HexColor("#ffd6d6")
+_C_BLUE_DARK   = HexColor("#1e3a5f")
+_C_AMBER       = HexColor("#e9a800")
+_C_GRAY_BG     = HexColor("#f8f9fa")
+_C_GRAY_BORDER = HexColor("#dee2e6")
+_C_GRAY_TEXT   = HexColor("#6c757d")
+_C_DARK        = HexColor("#1a1a2e")
+_PALETTE       = [_C_GREEN_MID, _C_TEAL, _C_GREEN_LIGHT, _C_AMBER, HexColor("#74c69d"), HexColor("#95d5b2")]
+_PAGE_W, _PAGE_H = A4
+_MARGIN = 18 * mm
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -73,12 +92,10 @@ def upload_to_r2(b64_str: str, folder: str) -> str:
     except Exception as e:
         print(f"Erro no upload para R2: {e}")
         return b64_str
-# ====================================================================
-
-# Database Connection
-mongo_url = os.environ['MONGO_URL']
+# ==================== BANCO DE DATOS ====================
+mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
 client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+db = client[os.environ.get('DB_NAME', 'clinic_db')]
 
 # ==================== UNICODE UTILS ====================
 # Funções de escape removidas em favor da blindagem Base64 total.
@@ -564,126 +581,42 @@ async def get_by_payment(current_user: dict = Depends(get_current_user)):
 
 @api_router.get("/finance/reports/export-pdf")
 async def export_finance_pdf(current_user: dict = Depends(get_current_user)):
-    from reportlab.platypus import Table, TableStyle, HRFlowable
-    from reportlab.lib.styles import ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
-
     now = datetime.now(timezone.utc)
     first_day = now.replace(day=1).strftime("%Y-%m-%d")
-    transactions = await db.transactions.find(
-        {"date": {"$gte": first_day}}, {"_id": 0}
-    ).sort("date", -1).to_list(2000)
-
-    settings    = await db.settings.find_one({"type": "clinic"}, {"_id": 0}) or {}
-    clinic_name = settings.get("clinic_name", "Clinica")
-    lh          = settings.get("letterhead_config", {})
-    try:    h_color = HexColor(lh.get("header_color", "#1a3a1a"))
-    except: h_color = HexColor("#1a3a1a")
-
-    income  = sum(t.get("amount", 0) for t in transactions if t.get("type") == "income")
-    expense = sum(t.get("amount", 0) for t in transactions if t.get("type") == "expense")
-    profit  = income - expense
-
-    def brl(v):
-        return "R$ {:,.2f}".format(abs(v)).replace(",", "X").replace(".", ",").replace("X", ".")
-
-    buf = BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4,
-        leftMargin=20*mm, rightMargin=20*mm,
-        topMargin=15*mm, bottomMargin=20*mm)
-
-    _styles = getSampleStyleSheet()
-    def sty(name, **kw):
-        return ParagraphStyle(name, parent=_styles["Normal"], **kw)
-
-    s_title   = sty("ft",  fontSize=16,  textColor=h_color, fontName="Helvetica-Bold", alignment=TA_CENTER, spaceAfter=4*mm)
-    s_sub     = sty("fs",  fontSize=9,   textColor=rl_colors.grey, alignment=TA_CENTER, spaceAfter=6*mm)
-    s_section = sty("fsc", fontSize=11,  textColor=h_color, fontName="Helvetica-Bold", spaceBefore=6*mm, spaceAfter=3*mm)
-    s_bold    = sty("fb",  fontSize=8.5, fontName="Helvetica-Bold")
-    s_bold_r  = sty("fbr", fontSize=8.5, fontName="Helvetica-Bold", alignment=TA_RIGHT)
-    s_cell    = sty("fc",  fontSize=8.5)
-    green_r   = sty("gr",  fontSize=8.5, alignment=TA_RIGHT, textColor=HexColor("#16a34a"), fontName="Helvetica-Bold")
-    red_r     = sty("rr",  fontSize=8.5, alignment=TA_RIGHT, textColor=HexColor("#dc2626"), fontName="Helvetica-Bold")
-
-    story = []
-    story.append(Paragraph(clinic_name, s_title))
-    story.append(Paragraph(f"Relatorio Financeiro - {now.strftime('%m/%Y')}", s_sub))
-    story.append(HRFlowable(width="100%", thickness=1, color=h_color))
-    story.append(Spacer(1, 5*mm))
-
-    # KPI Summary
-    story.append(Paragraph("RESUMO DO MES", s_section))
-    profit_sty = green_r if profit >= 0 else red_r
-    kpi = [
-        [Paragraph("Entradas",      s_bold), Paragraph(brl(income),  green_r)],
-        [Paragraph("Saidas",        s_bold), Paragraph(brl(expense), red_r)],
-        [Paragraph("Lucro Liquido", s_bold), Paragraph(brl(profit),  profit_sty)],
-    ]
-    kt = Table(kpi, colWidths=[80*mm, 80*mm])
-    kt.setStyle(TableStyle([
-        ("ROWBACKGROUNDS", (0,0), (-1,-1), [HexColor("#f0fdf4"), HexColor("#fef2f2"), HexColor("#ecfdf5")]),
-        ("BOX",           (0,0), (-1,-1),  0.5, rl_colors.lightgrey),
-        ("INNERGRID",     (0,0), (-1,-1),  0.3, rl_colors.lightgrey),
-        ("TOPPADDING",    (0,0), (-1,-1),  5),
-        ("BOTTOMPADDING", (0,0), (-1,-1),  5),
-        ("LEFTPADDING",   (0,0), (-1,-1),  8),
-        ("RIGHTPADDING",  (0,0), (-1,-1),  8),
-        ("VALIGN",        (0,0), (-1,-1),  "MIDDLE"),
-        ("LINEBELOW",     (0,-1),(-1,-1),  2, h_color),
-    ]))
-    story.append(kt)
-    story.append(Spacer(1, 5*mm))
-
-    # Transactions table
-    if transactions:
-        story.append(Paragraph("MOVIMENTACOES DO MES", s_section))
-        rows = [[
-            Paragraph("Data",      s_bold),
-            Paragraph("Descricao", s_bold),
-            Paragraph("Categoria", s_bold),
-            Paragraph("Pagamento", s_bold),
-            Paragraph("Valor",     s_bold_r),
-        ]]
-        for t in transactions:
-            try:    d = datetime.strptime(t["date"], "%Y-%m-%d").strftime("%d/%m/%Y")
-            except: d = t.get("date", "")
-            is_inc = t.get("type") == "income"
-            vsty   = green_r if is_inc else red_r
-            rows.append([
-                Paragraph(d, s_cell),
-                Paragraph(str(t.get("description",""))[:45], s_cell),
-                Paragraph(str(t.get("category","")), s_cell),
-                Paragraph(str(t.get("payment_method","")), s_cell),
-                Paragraph(f"{'+'if is_inc else'-'} {brl(t.get('amount',0))}", vsty),
-            ])
-        tbl = Table(rows, colWidths=[22*mm, 60*mm, 28*mm, 28*mm, 32*mm], repeatRows=1)
-        tbl.setStyle(TableStyle([
-            ("BACKGROUND",    (0,0), (-1,0),  h_color),
-            ("TEXTCOLOR",     (0,0), (-1,0),  white),
-            ("FONTNAME",      (0,0), (-1,0),  "Helvetica-Bold"),
-            ("FONTSIZE",      (0,0), (-1,0),  8.5),
-            ("ROWBACKGROUNDS",(0,1), (-1,-1), [white, HexColor("#f9fafb")]),
-            ("INNERGRID",     (0,0), (-1,-1), 0.25, rl_colors.lightgrey),
-            ("BOX",           (0,0), (-1,-1), 0.5,  rl_colors.grey),
-            ("TOPPADDING",    (0,0), (-1,-1), 4),
-            ("BOTTOMPADDING", (0,0), (-1,-1), 4),
-            ("LEFTPADDING",   (0,0), (-1,-1), 5),
-            ("RIGHTPADDING",  (0,0), (-1,-1), 5),
-            ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
-        ]))
-        story.append(tbl)
-
-    story.append(Spacer(1, 8*mm))
-    story.append(HRFlowable(width="100%", thickness=0.5, color=rl_colors.lightgrey))
-    story.append(Spacer(1, 2*mm))
-    story.append(Paragraph(
-        f"Gerado em {now.strftime('%d/%m/%Y as %H:%M')} por {current_user.get('name','Sistema')}",
-        sty("fn", fontSize=7, textColor=rl_colors.grey, alignment=TA_CENTER)
-    ))
-    doc.build(story)
-    buf.seek(0)
-    return StreamingResponse(buf, media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename=relatorio_financeiro_{now.strftime('%Y%m')}.pdf"})
+    transactions = await db.transactions.find({}, {"_id": 0}).sort("date", -1).to_list(1000)
+    settings = await db.settings.find_one({"type": "clinic"}, {"_id": 0}) or {}
+    clinic_name = settings.get("clinic_name", "Clinica Estetica")
+    month_trans = [t for t in transactions if t.get("date","") >= first_day]
+    income = sum(float(t.get("amount", 0)) for t in month_trans if t.get("type") == "income")
+    expense = sum(float(t.get("amount", 0)) for t in month_trans if t.get("type") == "expense")
+    summary = {"monthly_income": income, "monthly_expense": expense, "monthly_profit": income - expense}
+    monthly_map = defaultdict(lambda: {"income": 0.0, "expense": 0.0})
+    for t in transactions:
+        raw = t.get("date", "")
+        try:
+            d = datetime.strptime(raw, "%Y-%m-%d")
+            key = d.strftime("%b/%Y").capitalize()
+            monthly_map[key]["income" if t.get("type") == "income" else "expense"] += float(t.get("amount", 0))
+        except: pass
+    monthly_data = []
+    for i in range(5, -1, -1):
+        target = now - timedelta(days=i * 30)
+        key = target.strftime("%b/%Y").capitalize()
+        data = monthly_map.get(key, {"income": 0, "expense": 0})
+        monthly_data.append({"month": key, "income": data["income"], "expense": data["expense"], "profit": data["income"] - data["expense"]})
+    cat_map = defaultdict(lambda: {"income": 0.0, "expense": 0.0})
+    for t in month_trans:
+        cat = t.get("category", "Outros")
+        cat_map[cat]["income" if t.get("type") == "income" else "expense"] += float(t.get("amount", 0))
+    by_category = [{"category": k, "income": v["income"], "expense": v["expense"]} for k, v in cat_map.items()]
+    pay_map = defaultdict(float)
+    for t in month_trans:
+        if t.get("type") == "income":
+            pay_map[t.get("payment_method", "Outros")] += float(t.get("amount", 0))
+    by_payment = [{"method": k, "total": v} for k, v in pay_map.items()]
+    buf = _build_finance_pdf(monthly_data=monthly_data, by_category=by_category, by_payment=by_payment, summary=summary, transactions=transactions, clinic_name=clinic_name)
+    today_str = datetime.now().strftime("%Y%m%d")
+    return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=relatorio_financeiro_{today_str}.pdf"})
 
 # ==================== PACIENTES ====================
 
@@ -1753,3 +1686,319 @@ async def startup_event():
         await db.users.update_one({"email": master_email}, {
             "$set": {"password_hash": hash_password(master_password), "role": "admin", "active": True}
         })
+
+# ==================== FINANCE PDF HELPERS ====================
+
+def _fmt_brl(value) -> str:
+    v = float(value or 0)
+    return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+class _ColorBand(_Flowable):
+    def __init__(self, text, bg, fg=None, height=9*mm, font_size=10):
+        super().__init__()
+        self.text, self.bg, self.fg = text, bg, fg or HexColor("#ffffff")
+        self.height, self.font_size = height, font_size
+    def wrap(self, aw, ah):
+        self.width = aw
+        return aw, self.height
+    def draw(self):
+        self.canv.setFillColor(self.bg)
+        self.canv.roundRect(0, 0, self.width, self.height, 4, fill=1, stroke=0)
+        self.canv.setFillColor(self.fg)
+        self.canv.setFont("Helvetica-Bold", self.font_size)
+        self.canv.drawString(8, self.height / 2 - self.font_size / 3, self.text)
+
+class _KpiCard(_Flowable):
+    def __init__(self, label, value, bar_color, value_color=None, width=55*mm, height=20*mm):
+        super().__init__()
+        self.label, self.value = label, value
+        self.bar_color = bar_color
+        self.value_color = value_color or bar_color
+        self._w, self._h = width, height
+    def wrap(self, aw, ah):
+        return self._w, self._h
+    def draw(self):
+        c = self.canv
+        c.setFillColor(HexColor("#ffffff"))
+        c.setStrokeColor(_C_GRAY_BORDER)
+        c.setLineWidth(0.5)
+        c.roundRect(0, 0, self._w, self._h, 5, fill=1, stroke=1)
+        c.setFillColor(self.bar_color)
+        c.roundRect(0, 0, 4, self._h, 2, fill=1, stroke=0)
+        c.setFillColor(_C_GRAY_TEXT)
+        c.setFont("Helvetica", 7)
+        c.drawString(10, self._h - 12, self.label.upper())
+        c.setFillColor(self.value_color)
+        c.setFont("Helvetica-Bold", 13)
+        c.drawString(10, 5, self.value)
+
+class _MiniBarChart(_Flowable):
+    def __init__(self, data, width=160*mm, height=60*mm):
+        super().__init__()
+        self.data, self._w, self._h = data, width, height
+    def wrap(self, aw, ah):
+        return self._w, self._h
+    def draw(self):
+        c = self.canv
+        if not self.data:
+            c.setFillColor(_C_GRAY_TEXT)
+            c.setFont("Helvetica", 9)
+            c.drawCentredString(self._w / 2, self._h / 2, "Sem dados disponíveis")
+            return
+        pad_l, pad_r, pad_b = 52, 10, 30
+        cw = self._w - pad_l - pad_r
+        ch = self._h - pad_b - 10
+        all_vals = [v for row in self.data for v in row[1:3] if v > 0]
+        max_val = max(all_vals) if all_vals else 1
+        n = len(self.data)
+        gw = cw / n
+        bw = gw * 0.22
+        gap = bw * 0.5
+        colors = [_C_GREEN_LIGHT, _C_RED_DARK, _C_BLUE_DARK]
+        c.setStrokeColor(_C_GRAY_BORDER)
+        c.setLineWidth(0.3)
+        for i in range(5):
+            y = pad_b + ch * i / 4
+            c.line(pad_l, y, pad_l + cw, y)
+            val = max_val * i / 4
+            c.setFillColor(_C_GRAY_TEXT)
+            c.setFont("Helvetica", 6)
+            c.drawRightString(pad_l - 3, y - 2, _fmt_brl(val))
+        for i, row in enumerate(self.data):
+            label = row[0]
+            gx = pad_l + i * gw + gw * 0.1
+            for j, (val, col) in enumerate(zip(row[1:4], colors)):
+                x = gx + j * (bw + gap)
+                bh = (val / max_val) * ch if val > 0 else 0
+                c.setFillColor(col)
+                if bh > 0:
+                    c.roundRect(x, pad_b, bw, bh, 2, fill=1, stroke=0)
+            c.setFillColor(_C_DARK)
+            c.setFont("Helvetica", 6)
+            c.drawCentredString(gx + gw * 0.35, pad_b - 10, label)
+        c.setStrokeColor(_C_GRAY_BORDER)
+        c.setLineWidth(0.5)
+        c.line(pad_l, pad_b, pad_l, pad_b + ch)
+        lx = pad_l
+        for lbl, col in zip(["Entradas", "Saídas", "Lucro"], colors):
+            c.setFillColor(col)
+            c.roundRect(lx, 4, 8, 6, 1, fill=1, stroke=0)
+            c.setFillColor(_C_DARK)
+            c.setFont("Helvetica", 6)
+            c.drawString(lx + 10, 5, lbl)
+            lx += 55
+
+class _PieChart(_Flowable):
+    def __init__(self, slices, width=70*mm, height=70*mm):
+        super().__init__()
+        self.slices, self._w, self._h = slices, width, height
+    def wrap(self, aw, ah):
+        return self._w, self._h
+    def draw(self):
+        c = self.canv
+        cx, cy = self._w / 2, self._h / 2 + 8
+        r = min(cx, cy) - 12
+        total = sum(s[1] for s in self.slices)
+        if not total:
+            c.setFillColor(_C_GRAY_TEXT)
+            c.setFont("Helvetica", 8)
+            c.drawCentredString(cx, cy, "Sem dados")
+            return
+        start = 90
+        for label, val, col in self.slices:
+            angle = (val / total) * 360
+            c.setFillColor(col)
+            c.wedge(cx - r, cy - r, cx + r, cy + r, start, angle, fill=1, stroke=0)
+            start += angle
+        c.setFillColor(HexColor("#ffffff"))
+        c.circle(cx, cy, r * 0.55, fill=1, stroke=0)
+        c.setFillColor(_C_DARK)
+        c.setFont("Helvetica-Bold", 7)
+        c.drawCentredString(cx, cy + 2, "Total")
+        c.setFont("Helvetica", 6)
+        c.drawCentredString(cx, cy - 7, _fmt_brl(total))
+
+def _legend_table(slices, total, styles):
+    from reportlab.lib.styles import ParagraphStyle as PS
+    rows = []
+    for label, val, col in slices:
+        pct = f"{val/total*100:.1f}%" if total else "0%"
+        rows.append([
+            Paragraph(f'<font color="{col.hexval()}">■</font> {label}', PS("lg", fontSize=7, leading=9)),
+            Paragraph(pct, PS("lp", fontSize=7, alignment=TA_RIGHT, leading=9)),
+            Paragraph(_fmt_brl(val), PS("lv", fontSize=7, fontName="Helvetica-Bold", alignment=TA_RIGHT, leading=9, textColor=col)),
+        ])
+    t = Table(rows, colWidths=[50*mm, 16*mm, 30*mm])
+    t.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("LINEBELOW", (0, 0), (-1, -2), 0.3, _C_GRAY_BORDER),
+    ]))
+    return t
+
+def _on_page(canvas, doc):
+    w, h = A4
+    canvas.setFillColor(_C_GREEN_DARK)
+    canvas.rect(0, h - 22*mm, w, 22*mm, fill=1, stroke=0)
+    canvas.setFillColor(HexColor("#ffffff"))
+    canvas.setFont("Helvetica-Bold", 16)
+    canvas.drawString(_MARGIN, h - 13*mm, "Relatório Financeiro")
+    canvas.setFont("Helvetica", 9)
+    now = datetime.now().strftime("%d/%m/%Y às %H:%M")
+    canvas.drawRightString(w - _MARGIN, h - 13*mm, f"Gerado em {now}")
+    canvas.setFillColor(_C_TEAL)
+    canvas.rect(0, h - 23*mm, w, 1*mm, fill=1, stroke=0)
+    canvas.setFillColor(_C_GRAY_BG)
+    canvas.rect(0, 0, w, 12*mm, fill=1, stroke=0)
+    canvas.setStrokeColor(_C_GRAY_BORDER)
+    canvas.setLineWidth(0.3)
+    canvas.line(0, 12*mm, w, 12*mm)
+    canvas.setFillColor(_C_GRAY_TEXT)
+    canvas.setFont("Helvetica", 7)
+    canvas.drawString(_MARGIN, 5*mm, "Sistema de Gestão — Clínica Estética  •  Documento gerado automaticamente")
+    canvas.drawRightString(w - _MARGIN, 5*mm, f"Página {doc.page}")
+
+def _build_finance_pdf(monthly_data, by_category, by_payment, summary, transactions, clinic_name="Clínica"):
+    from reportlab.lib.styles import ParagraphStyle as PS
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=_MARGIN, rightMargin=_MARGIN, topMargin=26*mm, bottomMargin=16*mm)
+    styles = getSampleStyleSheet()
+    s_norm = PS("sn", fontSize=8, leading=11)
+    s_small = PS("ss", fontSize=7, textColor=_C_GRAY_TEXT, leading=10)
+    s_ctr = PS("sc", fontSize=8, alignment=TA_CENTER, leading=11)
+    s_rt = PS("sr", fontSize=8, alignment=TA_RIGHT, leading=11)
+    story = []
+    income = float(summary.get("monthly_income", 0))
+    expense = float(summary.get("monthly_expense", 0))
+    profit = float(summary.get("monthly_profit", 0))
+    trans_count = len(transactions)
+    inc_count = sum(1 for t in transactions if t.get("type") == "income")
+    avg_ticket = income / inc_count if inc_count else 0
+    now = datetime.now()
+    month_name = now.strftime("%B/%Y").capitalize()
+    info_t = Table([[
+        Paragraph(f"<b>Referência:</b> {month_name}", s_norm),
+        Paragraph(f"<b>Clínica:</b> {clinic_name}", s_norm),
+        Paragraph(f"<b>Transações:</b> {trans_count}", s_norm),
+    ]], colWidths=[(_PAGE_W - 2*_MARGIN) / 3] * 3)
+    info_t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), _C_GRAY_BG),
+        ("GRID", (0, 0), (-1, -1), 0.3, _C_GRAY_BORDER),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    story += [info_t, Spacer(1, 5*mm)]
+    story.append(_ColorBand("  Resumo do Mes Atual", _C_GREEN_DARK))
+    story.append(Spacer(1, 3*mm))
+    kpi_w = (_PAGE_W - 2*_MARGIN - 8*mm) / 3
+    row1 = Table([[
+        _KpiCard("Entradas (mes)", _fmt_brl(income), _C_GREEN_MID, _C_GREEN_DARK, kpi_w),
+        _KpiCard("Saidas (mes)", _fmt_brl(expense), _C_RED_DARK, _C_RED_DARK, kpi_w),
+        _KpiCard("Lucro Liquido", _fmt_brl(profit), _C_BLUE_DARK, _C_BLUE_DARK if profit >= 0 else _C_RED_DARK, kpi_w),
+    ]], colWidths=[kpi_w, kpi_w, kpi_w])
+    row1.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 4*mm)]))
+    story += [row1, Spacer(1, 3*mm)]
+    row2 = Table([[
+        _KpiCard("No de Transacoes", str(trans_count), _C_AMBER, _C_AMBER, kpi_w, 16*mm),
+        _KpiCard("Entradas (qtd.)", str(inc_count), _C_GREEN_MID, _C_GREEN_DARK, kpi_w, 16*mm),
+        _KpiCard("Ticket Medio", _fmt_brl(avg_ticket), _C_TEAL, _C_GREEN_DARK, kpi_w, 16*mm),
+    ]], colWidths=[kpi_w, kpi_w, kpi_w])
+    row2.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 4*mm)]))
+    story += [row2, Spacer(1, 3*mm)]
+    story.append(_ColorBand("  Evolucao Mensal (ultimos 6 meses)", _C_GREEN_MID))
+    story.append(Spacer(1, 3*mm))
+    chart_data = [(m.get("month",""), float(m.get("income",0)), float(m.get("expense",0)), float(m.get("profit",0))) for m in monthly_data]
+    story.append(_MiniBarChart(chart_data, width=_PAGE_W - 2*_MARGIN, height=60*mm))
+    story.append(Spacer(1, 3*mm))
+    if monthly_data:
+        hdr = [Paragraph(f"<b>{h}</b>", s_ctr if i == 0 else PS("h", fontSize=8, alignment=TA_RIGHT, leading=11)) for i, h in enumerate(["Mes","Entradas","Saidas","Lucro","Margem"])]
+        rows_m = [hdr]
+        for m in monthly_data:
+            inc = float(m.get("income", 0)); exp = float(m.get("expense", 0)); prf = float(m.get("profit", 0))
+            margin = f"{prf/inc*100:.1f}%" if inc else "—"
+            pc = "#2d6a4f" if prf >= 0 else "#c1121f"
+            rows_m.append([
+                Paragraph(m.get("month",""), s_norm),
+                Paragraph(_fmt_brl(inc), PS("ri", fontSize=8, alignment=TA_RIGHT, textColor=_C_GREEN_MID)),
+                Paragraph(_fmt_brl(exp), PS("re", fontSize=8, alignment=TA_RIGHT, textColor=_C_RED_DARK)),
+                Paragraph(f'<font color="{pc}"><b>{_fmt_brl(prf)}</b></font>', PS("rp", fontSize=8, alignment=TA_RIGHT)),
+                Paragraph(margin, PS("rm", fontSize=8, alignment=TA_RIGHT, textColor=_C_GRAY_TEXT)),
+            ])
+        cw = [(_PAGE_W - 2*_MARGIN) / 5] * 5
+        mt = Table(rows_m, colWidths=cw)
+        mt.setStyle(TableStyle([
+            ("BACKGROUND", (0,0),(-1,0), _C_GREEN_DARK), ("TEXTCOLOR", (0,0),(-1,0), HexColor("#ffffff")),
+            ("ROWBACKGROUNDS",(0,1),(-1,-1),[HexColor("#ffffff"), _C_GRAY_BG]), ("GRID", (0,0),(-1,-1), 0.3, _C_GRAY_BORDER),
+            ("VALIGN", (0,0),(-1,-1), "MIDDLE"),
+        ]))
+        story.append(mt)
+    story.append(Spacer(1, 6*mm))
+    story.append(_ColorBand("  Entradas por Categoria & Forma de Pagamento", _C_GREEN_MID))
+    story.append(Spacer(1, 3*mm))
+    cat_sl = [(c.get("category","?"), float(c.get("income",0)), _PALETTE[i % len(_PALETTE)]) for i, c in enumerate(by_category) if float(c.get("income",0)) > 0]
+    pay_sl = [(p.get("method","?"), float(p.get("total",0)), _PALETTE[i % len(_PALETTE)]) for i, p in enumerate(by_payment) if float(p.get("total",0)) > 0]
+    cat_tot = sum(v for _,v,_ in cat_sl) or 1
+    pay_tot = sum(v for _,v,_ in pay_sl) or 1
+    sw = (_PAGE_W - 2*_MARGIN - 6*mm) / 2
+    cat_col = [_PieChart(cat_sl, sw, 65*mm), _legend_table(cat_sl, cat_tot, styles)] if cat_sl else [Paragraph("Sem dados.", s_small)]
+    pay_col = [_PieChart(pay_sl, sw, 65*mm), _legend_table(pay_sl, pay_tot, styles)] if pay_sl else [Paragraph("Sem dados.", s_small)]
+    pie_t = Table([[cat_col, pay_col]], colWidths=[sw, sw])
+    pie_t.setStyle(TableStyle([("VALIGN", (0,0),(-1,-1), "TOP"), ("LINEBEFORE", (1,0),(1,-1), 0.3, _C_GRAY_BORDER)]))
+    story += [pie_t, Spacer(1, 6*mm)]
+    exp_cats = [(c.get("category","?"), float(c.get("expense",0))) for c in by_category if float(c.get("expense",0)) > 0]
+    if exp_cats:
+        story.append(_ColorBand("  Saidas por Categoria", _C_RED_DARK))
+        story.append(Spacer(1, 3*mm))
+        tot_exp = sum(v for _,v in exp_cats) or 1
+        exp_rows = [[Paragraph(f"<b>{h}</b>", PS("eh", fontSize=8, alignment=TA_RIGHT if i > 0 else TA_CENTER, leading=11)) for i, h in enumerate(["Categoria","Valor","%","Distribuicao"])]]
+        for label, val in sorted(exp_cats, key=lambda x: -x[1]):
+            pct = val / tot_exp
+            bar = "█" * int(pct * 18) + "░" * (18 - int(pct * 18))
+            exp_rows.append([
+                Paragraph(label, s_norm),
+                Paragraph(_fmt_brl(val), PS("ev", fontSize=8, alignment=TA_RIGHT, textColor=_C_RED_DARK)),
+                Paragraph(f"{pct*100:.1f}%", PS("ep", fontSize=8, alignment=TA_RIGHT, textColor=_C_GRAY_TEXT)),
+                Paragraph(f'<font color="#c1121f">{bar}</font>', PS("eb", fontSize=6)),
+            ])
+        avail = _PAGE_W - 2*_MARGIN
+        et = Table(exp_rows, colWidths=[55*mm, 40*mm, 22*mm, avail - 117*mm])
+        et.setStyle(TableStyle([
+            ("BACKGROUND", (0,0),(-1,0), _C_RED_DARK), ("TEXTCOLOR", (0,0),(-1,0), HexColor("#ffffff")),
+            ("ROWBACKGROUNDS",(0,1),(-1,-1),[HexColor("#ffffff"), _C_RED_LIGHT]), ("GRID", (0,0),(-1,-1), 0.3, _C_GRAY_BORDER),
+        ]))
+        story += [et, Spacer(1, 6*mm)]
+    story.append(_ColorBand("  Ultimas Transacoes (ate 50)", _C_BLUE_DARK))
+    story.append(Spacer(1, 3*mm))
+    trans_show = transactions[:50]
+    if trans_show:
+        t_hdr = [Paragraph(f"<b>{h}</b>", PS("th", fontSize=8, alignment=TA_CENTER if i in (0,4) else (TA_RIGHT if i==5 else None) or 0, leading=11)) for i, h in enumerate(["Data","Descricao","Categoria","Pagamento","Tipo","Valor"])]
+        t_rows = [t_hdr]
+        for t in trans_show:
+            is_inc = t.get("type") == "income"; val = float(t.get("amount", 0))
+            vstr = f'{"+" if is_inc else "-"} {_fmt_brl(val)}'; vc = "#2d6a4f" if is_inc else "#c1121f"; tipo = "Entrada" if is_inc else "Saida"
+            raw_d = t.get("date","")
+            try: date_str = datetime.strptime(raw_d, "%Y-%m-%d").strftime("%d/%m/%Y")
+            except: date_str = raw_d
+            t_rows.append([
+                Paragraph(date_str, s_ctr), Paragraph(t.get("description","—")[:38], s_norm),
+                Paragraph(t.get("category","—"), s_small), Paragraph(t.get("payment_method","—"), s_small),
+                Paragraph(f'<font color="{vc}"><b>{tipo}</b></font>', PS("tp", fontSize=7, alignment=TA_CENTER)),
+                Paragraph(f'<font color="{vc}"><b>{vstr}</b></font>', PS("vp", fontSize=8, alignment=TA_RIGHT)),
+            ])
+        tt = Table(t_rows, colWidths=[22*mm, 63*mm, 30*mm, 28*mm, 20*mm, 37*mm], repeatRows=1)
+        tt.setStyle(TableStyle([
+            ("BACKGROUND", (0,0),(-1,0), _C_BLUE_DARK), ("TEXTCOLOR", (0,0),(-1,0), HexColor("#ffffff")),
+            ("ROWBACKGROUNDS",(0,1),(-1,-1),[HexColor("#ffffff"), _C_GRAY_BG]), ("GRID", (0,0),(-1,-1), 0.3, _C_GRAY_BORDER),
+        ]))
+        story.append(tt)
+    else:
+        story.append(Paragraph("Nenhuma transacao registrada.", s_small))
+    story += [Spacer(1, 4*mm), HRFlowable(width="100%", thickness=0.5, color=_C_GRAY_BORDER), Spacer(1, 2*mm)]
+    story.append(Paragraph(f"Relatorio gerado automaticamente pelo Sistema de Gestao — {clinic_name}  •  {datetime.now().strftime('%d/%m/%Y as %H:%M')}", PS("fn", fontSize=7, textColor=_C_GRAY_TEXT, alignment=TA_CENTER)))
+    doc.build(story, onFirstPage=_on_page, onLaterPages=_on_page)
+    buf.seek(0)
+    return buf
