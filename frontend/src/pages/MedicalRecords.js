@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import { Html5QrcodeScanner } from 'html5-qrcode';
 import Layout from '../components/Layout';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -190,12 +191,14 @@ const MedicalRecords = () => {
   const openScanner = () => {
     setIsScannerOpen(true);
     setTimeout(() => {
-      const html5QrcodeScanner = new window.Html5QrcodeScanner(
+      const html5QrcodeScanner = new Html5QrcodeScanner(
         'qr-reader-records',
         { fps: 10, qrbox: { width: 250, height: 250 } },
         false
       );
-      html5QrcodeScanner.render(handleScanSuccess, () => {});
+      html5QrcodeScanner.render(handleScanSuccess, (error) => {
+        // Ignorar erros de scan contínuos para não poluir o console
+      });
       setScanner(html5QrcodeScanner);
     }, 500);
   };
