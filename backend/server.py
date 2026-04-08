@@ -142,6 +142,12 @@ class PatientUpdate(BaseModel):
     consent_signed: Optional[bool] = None
     consent_date: Optional[str] = None
 
+class ProductUsage(BaseModel):
+    product_id: str
+    product_name: str
+    quantity: int
+    batch_number: Optional[str] = None
+
 class MedicalRecordCreate(BaseModel):
     patient_id: str = Field(..., min_length=1)
     procedure_id: str = Field(..., min_length=1)
@@ -152,6 +158,7 @@ class MedicalRecordCreate(BaseModel):
     diagnosis: Optional[str] = Field(None, max_length=2000)
     treatment_plan: Optional[str] = Field(None, max_length=5000)
     products_applied: Optional[List[str]] = Field(default_factory=list)
+    products_used: Optional[List[ProductUsage]] = Field(default_factory=list)
     techniques_used: Optional[str] = Field(None, max_length=2000)
     observations: Optional[str] = Field(None, max_length=5000)
     photos_before: Optional[List[str]] = Field(default_factory=list)
@@ -159,6 +166,10 @@ class MedicalRecordCreate(BaseModel):
     evolution_notes: Optional[str] = Field(None, max_length=5000)
     next_session_notes: Optional[str] = Field(None, max_length=2000)
     next_session_date: Optional[str] = None
+    # Integração Financeira
+    payment_amount: Optional[float] = None
+    payment_method: Optional[str] = None
+    payment_status: Optional[str] = "paid"
 
 class MedicalRecordUpdate(BaseModel):
     procedure_id: Optional[str] = None
@@ -650,11 +661,66 @@ async def delete_patient(id: str, current_user: dict = Depends(get_current_user)
 @api_router.post("/medical-records")
 async def create_medical_record(record: MedicalRecordCreate, current_user: dict = Depends(get_current_user)):
     doc = record.model_dump()
+    
+    # Upload de fotos para o R2
     doc["photos_before"] = [upload_to_r2(p, "prontuarios") for p in (doc.get("photos_before") or [])]
     doc["photos_after"] = [upload_to_r2(p, "prontuarios") for p in (doc.get("photos_after") or [])]
+    
     doc["id"] = str(uuid.uuid4())
     doc["created_at"] = datetime.now(timezone.utc).isoformat()
     doc["created_by"] = current_user.get("name")
+    
+    # 1. Integração com Estoque: Baixa automática
+    products_used = doc.get("products_used", [])
+    for usage in products_used:
+        product_id = usage.get("product_id")
+        qty = usage.get("quantity", 0)
+        if product_id and qty > 0:
+            # Busca o produto para validar estoque
+            product = await db.products.find_one({"id": product_id})
+            if product:
+                # Atualiza quantidade no estoque
+                await db.products.update_one(
+                    {"id": product_id},
+                    {"$inc": {"quantity": -qty}}
+                )
+                # Registra a movimentação de saída
+                movement = {
+                    "id": str(uuid.uuid4()),
+                    "product_id": product_id,
+                    "product_name": product.get("name"),
+                    "type": "saida",
+                    "quantity": qty,
+                    "notes": f"Uso em prontuário: {doc.get('procedure_name')} - Paciente ID: {doc.get('patient_id')}",
+                    "date": doc.get("date"),
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "created_by": current_user.get("name")
+                }
+                await db.movements.insert_one(movement)
+
+    # 2. Integração Financeira: Geração automática de transação
+    payment_amount = doc.get("payment_amount")
+    payment_method = doc.get("payment_method")
+    if payment_amount and payment_amount > 0 and payment_method:
+        patient = await db.patients.find_one({"id": doc.get("patient_id")})
+        patient_name = patient.get("name") if patient else "Paciente não identificado"
+        
+        transaction = {
+            "id": str(uuid.uuid4()),
+            "description": f"Procedimento: {doc.get('procedure_name')} - {patient_name}",
+            "amount": payment_amount,
+            "type": "income",
+            "category": "Procedimentos",
+            "payment_method": payment_method,
+            "date": doc.get("date"),
+            "status": doc.get("payment_status", "paid"),
+            "patient_id": doc.get("patient_id"),
+            "record_id": doc["id"],
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_by": current_user.get("name")
+        }
+        await db.transactions.insert_one(transaction)
+
     await db.medical_records.insert_one(doc)
     doc.pop("_id", None)
     return doc

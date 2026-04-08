@@ -31,6 +31,7 @@ const MedicalRecords = () => {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [products, setProducts] = useState([]);
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [isPhotoViewOpen, setIsPhotoViewOpen] = useState(false);
   const [viewingPhoto, setViewingPhoto] = useState('');
@@ -46,7 +47,7 @@ const MedicalRecords = () => {
   });
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { fetchPatients(); fetchProcedures(); }, []);
+  useEffect(() => { fetchPatients(); fetchProcedures(); fetchProducts(); }, []);
 
   useEffect(() => {
     if (searchTerm) {
@@ -72,6 +73,13 @@ const MedicalRecords = () => {
     } catch (e) { console.error(e); }
   };
 
+  const fetchProducts = async () => {
+    try {
+      const { data } = await axios.get(`${API}/products`, { withCredentials: true });
+      setProducts(data);
+    } catch (e) { console.error(e); }
+  };
+
   const fetchRecords = async (patientId) => {
     try {
       const { data } = await axios.get(`${API}/medical-records/patient/${patientId}`, { withCredentials: true });
@@ -90,15 +98,56 @@ const MedicalRecords = () => {
     setFormData({
       procedure_id: '', procedure_name: '', date: new Date().toISOString().split('T')[0],
       chief_complaint: '', clinical_notes: '', diagnosis: '', treatment_plan: '',
-      products_applied: [], techniques_used: '', observations: '',
+      products_applied: [], products_used: [], techniques_used: '', observations: '',
       photos_before: [], photos_after: [],
-      evolution_notes: '', next_session_notes: '', next_session_date: ''
+      evolution_notes: '', next_session_notes: '', next_session_date: '',
+      payment_amount: '', payment_method: '', payment_status: 'paid'
     });
   };
 
   const handleProcedureSelect = (procId) => {
     const proc = procedures.find(p => p.id === procId);
-    setFormData(prev => ({ ...prev, procedure_id: procId, procedure_name: proc?.name || '' }));
+    setFormData(prev => ({ 
+      ...prev, 
+      procedure_id: procId, 
+      procedure_name: proc?.name || '',
+      payment_amount: proc?.price || ''
+    }));
+  };
+
+  const addProductUsage = (productId) => {
+    const product = products.find(p => p.id === productId);
+    if (!product) return;
+    
+    setFormData(prev => {
+      const existing = prev.products_used.find(p => p.product_id === productId);
+      if (existing) return prev;
+      
+      return {
+        ...prev,
+        products_used: [...prev.products_used, {
+          product_id: product.id,
+          product_name: product.name,
+          quantity: 1,
+          batch_number: product.batch_number
+        }]
+      };
+    });
+  };
+
+  const removeProductUsage = (index) => {
+    setFormData(prev => ({
+      ...prev,
+      products_used: prev.products_used.filter((_, i) => i !== index)
+    }));
+  };
+
+  const updateProductQty = (index, qty) => {
+    setFormData(prev => {
+      const newList = [...prev.products_used];
+      newList[index].quantity = parseInt(qty) || 1;
+      return { ...prev, products_used: newList };
+    });
   };
 
   // Motor de Compressão Web para não estourar o banco do MongoDB
@@ -290,6 +339,48 @@ const MedicalRecords = () => {
           <Input type="date" value={formData.date} onChange={e => setFormData(prev => ({...prev, date: e.target.value}))} data-testid="record-date-input" />
         </div>
       </div>
+
+      {/* Integração Financeira Rápida */}
+      <div className="p-4 bg-primary/5 rounded-xl border border-primary/10 space-y-3">
+        <h3 className="text-sm font-medium flex items-center gap-2 text-primary">
+          <Download className="w-4 h-4" /> Pagamento e Faturamento
+        </h3>
+        <div className="grid grid-cols-3 gap-4">
+          <div>
+            <Label className="text-xs">Valor Cobrado (R$)</Label>
+            <Input 
+              type="number" 
+              value={formData.payment_amount} 
+              onChange={e => setFormData(prev => ({...prev, payment_amount: e.target.value}))}
+              placeholder="0,00"
+            />
+          </div>
+          <div>
+            <Label className="text-xs">Forma de Pagamento</Label>
+            <Select value={formData.payment_method} onValueChange={val => setFormData(prev => ({...prev, payment_method: val}))}>
+              <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Pix">Pix</SelectItem>
+                <SelectItem value="Cartão de Crédito">Cartão de Crédito</SelectItem>
+                <SelectItem value="Cartão de Débito">Cartão de Débito</SelectItem>
+                <SelectItem value="Dinheiro">Dinheiro</SelectItem>
+                <SelectItem value="Transferência">Transferência</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs">Status</Label>
+            <Select value={formData.payment_status} onValueChange={val => setFormData(prev => ({...prev, payment_status: val}))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="paid">Pago (Recebido)</SelectItem>
+                <SelectItem value="pending">Pendente</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </div>
+
       <div>
         <Label>Queixa Principal</Label>
         <Textarea value={formData.chief_complaint} onChange={e => setFormData(prev => ({...prev, chief_complaint: e.target.value}))}
@@ -316,6 +407,57 @@ const MedicalRecords = () => {
         <Label>Técnicas Utilizadas</Label>
         <Textarea value={formData.techniques_used} onChange={e => setFormData(prev => ({...prev, techniques_used: e.target.value}))}
           placeholder="Técnicas, pontos de aplicação, volumes..." rows={2} data-testid="record-techniques" />
+      </div>
+
+      {/* Integração com Estoque */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <Label className="flex items-center gap-2">
+            <Plus className="w-4 h-4 text-primary" /> Produtos Utilizados (Baixa Automática)
+          </Label>
+          <Select onValueChange={addProductUsage}>
+            <SelectTrigger className="w-[200px] h-8 text-xs">
+              <SelectValue placeholder="Adicionar produto..." />
+            </SelectTrigger>
+            <SelectContent>
+              {products.filter(p => p.quantity > 0).map(p => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.name} (Lote: {p.batch_number})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        
+        {formData.products_used.length > 0 ? (
+          <div className="space-y-2">
+            {formData.products_used.map((p, i) => (
+              <div key={i} className="flex items-center justify-between p-2 bg-secondary/20 rounded-lg border border-border/40">
+                <div className="flex-1">
+                  <p className="text-sm font-medium">{p.product_name}</p>
+                  <p className="text-xs text-muted-foreground">Lote: {p.batch_number}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <Label className="text-xs">Qtd:</Label>
+                    <Input 
+                      type="number" 
+                      className="w-16 h-8 text-center" 
+                      value={p.quantity} 
+                      onChange={e => updateProductQty(i, e.target.value)}
+                      min="1"
+                    />
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => removeProductUsage(i)} className="text-destructive h-8 w-8 p-0">
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground italic bg-secondary/10 p-2 rounded text-center">Nenhum produto vinculado a este atendimento</p>
+        )}
       </div>
       <div>
         <Label>Observações</Label>
@@ -592,6 +734,38 @@ const MedicalRecords = () => {
                   {selectedRecord.observations && (
                     <div><Label className="text-xs text-muted-foreground">Observações</Label>
                       <p className="text-sm mt-1">{selectedRecord.observations}</p></div>
+                  )}
+
+                  {/* Produtos Utilizados */}
+                  {selectedRecord.products_used?.length > 0 && (
+                    <div className="bg-primary/5 p-3 rounded-lg border border-primary/10">
+                      <Label className="text-xs text-primary font-medium flex items-center gap-1 mb-2">
+                        <Plus className="w-3 h-3" /> Produtos Utilizados
+                      </Label>
+                      <div className="space-y-1">
+                        {selectedRecord.products_used.map((p, i) => (
+                          <div key={i} className="flex justify-between text-sm">
+                            <span>{p.product_name} <span className="text-xs text-muted-foreground">(Lote: {p.batch_number})</span></span>
+                            <span className="font-medium">x{p.quantity}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Dados Financeiros */}
+                  {selectedRecord.payment_amount > 0 && (
+                    <div className="bg-green-50 p-3 rounded-lg border border-green-100">
+                      <Label className="text-xs text-green-700 font-medium flex items-center gap-1 mb-1">
+                        <Download className="w-3 h-3" /> Faturamento do Atendimento
+                      </Label>
+                      <div className="flex justify-between items-center">
+                        <p className="text-lg font-bold text-green-800">R$ {parseFloat(selectedRecord.payment_amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-green-200 text-green-800 font-medium">
+                          {selectedRecord.payment_method} - {selectedRecord.payment_status === 'paid' ? 'Pago' : 'Pendente'}
+                        </span>
+                      </div>
+                    </div>
                   )}
 
                   {/* Photos */}
