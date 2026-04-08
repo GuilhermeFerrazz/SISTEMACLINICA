@@ -81,22 +81,7 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 # ==================== UNICODE UTILS ====================
-def unicode_escape_encode(s: str) -> str:
-    """Converte emojis e caracteres especiais em sequências de escape literais (ex: \\U0001F60A)."""
-    if not s: return s
-    # Usa double-slash para evitar que o Python processe o escape antes de salvar
-    return s.encode('unicode_escape').decode('ascii')
-
-def unicode_escape_decode(s: str) -> str:
-    """Converte sequências de escape literais de volta em caracteres reais (ex: \\U0001F60A -> 😊)."""
-    if not s: return s
-    try:
-        # Se contiver escapes literais (\u ou \U), decodifica
-        if "\\u" in s or "\\U" in s:
-            return s.encode('ascii').decode('unicode_escape')
-        return s
-    except Exception:
-        return s
+# Funções de escape removidas em favor da blindagem Base64 total.
 # ========================================================
 
 app = FastAPI()
@@ -331,12 +316,10 @@ def _get_template_msg(tmpl: dict | None, tmpl_type: str) -> str:
                 return base64.b64decode(b64_data).decode('utf-8')
             except Exception as e:
                 print(f"Erro ao decodificar template Base64: {e}")
-                # Se falhar, tenta tratar como texto normal abaixo
         
-        # Se a mensagem existir e não estiver visivelmente quebrada por drivers antigos
+        # Se a mensagem existir e não estiver corrompida, retorna como está
         if msg and "\ufffd" not in msg:
-            # Tenta decodificar o escape unicode se houver
-            return unicode_escape_decode(msg)
+            return msg
             
     # Caso contrário (vazia ou corrompida), retorna o template padrão
     return _DEFAULT_TEMPLATES.get(tmpl_type, "")
@@ -512,11 +495,7 @@ import unicodedata
 @api_router.put("/message-templates/{id}")
 async def update_template(id: str, request: Request, current_user: dict = Depends(get_current_user)):
     data = await request.json()
-    
-    # Codificação de Escape Unicode para garantir que emojis NUNCA corrompam no banco
-    if "message" in data and isinstance(data["message"], str):
-        data["message"] = unicode_escape_encode(data["message"])
-        
+    # A blindagem Base64 agora é feita no Frontend para total segurança.
     await db.message_templates.update_one({"id": id}, {"$set": data})
     return {"message": "Template atualizado"}
 
