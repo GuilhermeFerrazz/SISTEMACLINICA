@@ -305,49 +305,21 @@ _DEFAULT_TEMPLATES: dict = {
 
 
 def _get_template_msg(tmpl: dict | None, tmpl_type: str) -> str:
-    """Recupera o template do banco ou o padrão, garantindo codificação correta."""
+    """Recupera o template do banco ou o padrão."""
     if tmpl:
         msg = tmpl.get("message", "")
-        
-        # Blindagem Base64: Se a mensagem começar com B64:, decodifica
-        if msg and msg.startswith("B64:"):
-            try:
-                b64_data = msg[4:]
-                return base64.b64decode(b64_data).decode('utf-8')
-            except Exception as e:
-                print(f"Erro ao decodificar template Base64: {e}")
-        
-        # Se a mensagem existir e não estiver corrompida, retorna como está
-        if msg and "\ufffd" not in msg:
+        if msg:
             return msg
-            
-    # Caso contrário (vazia ou corrompida), retorna o template padrão
     return _DEFAULT_TEMPLATES.get(tmpl_type, "")
 
 
-def _reconstruct_surrogates(s: str) -> str:
-    out: list[str] = []
-    i = 0
-    while i < len(s):
-        cp = ord(s[i])
-        if 0xD800 <= cp <= 0xDBFF and i + 1 < len(s):
-            ncp = ord(s[i + 1])
-            if 0xDC00 <= ncp <= 0xDFFF:
-                out.append(chr(0x10000 + (cp - 0xD800) * 0x400 + (ncp - 0xDC00)))
-                i += 2
-                continue
-        out.append(s[i])
-        i += 1
-    return "".join(out)
-
-
 def whatsapp_encode(message: str) -> str:
+    """Codifica a mensagem para o link do WhatsApp de forma segura."""
+    if not message: return ""
     # Remove qualquer caractere corrompido que possa ter sobrado
     clean_msg = message.replace("\ufffd", "")
-    # Reconstrói pares de substituição (surrogates) se houver
-    fixed = _reconstruct_surrogates(clean_msg)
-    # Codifica para UTF-8 puro
-    return quote(fixed.encode("utf-8"), safe="")
+    # Codifica para UTF-8 e depois para URL
+    return quote(clean_msg.encode("utf-8"), safe="")
 
 
 def build_whatsapp_url(phone: str, message: str) -> str:

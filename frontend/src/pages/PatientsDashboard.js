@@ -146,18 +146,7 @@ const PatientsDashboard = () => {
       if (data.message && data.phone) {
         const phone = data.phone.replace(/\D/g, '');
         const finalPhone = phone.startsWith('55') ? phone : `55${phone}`;
-        
-        // Função robusta para codificar emojis para o link do WhatsApp
-        const robustWhatsAppEncode = (text) => {
-          return Array.from(text).map(char => {
-            return Array.from(new TextEncoder().encode(char))
-              .map(b => '%' + b.toString(16).toUpperCase().padStart(2, '0'))
-              .join('');
-          }).join('');
-        };
-        
-        const encodedMsg = robustWhatsAppEncode(data.message);
-        const whatsappUrl = `https://wa.me/${finalPhone}?text=${encodedMsg}`;
+        const whatsappUrl = `https://wa.me/${finalPhone}?text=${encodeURIComponent(data.message)}`;
         window.open(whatsappUrl, '_blank');
       } else if (data.whatsapp_url) {
         window.open(data.whatsapp_url, '_blank');
