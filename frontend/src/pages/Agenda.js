@@ -29,7 +29,13 @@ const Agenda = () => {
   const [quickPatientData, setQuickPatientData] = useState({
     name: '',
     phone: '',
-    cpf: ''
+    email: '',
+    cpf: '',
+    birth_date: '',
+    address: '',
+    medical_history: '',
+    allergies: '',
+    notes: ''
   });
   const [formData, setFormData] = useState({
     patient_id: '',
@@ -171,7 +177,7 @@ const Agenda = () => {
       setFormData(prev => ({ ...prev, patient_id: data.id }));
       
       // Limpa e fecha o modal rápido
-      setQuickPatientData({ name: '', phone: '', cpf: '' });
+      setQuickPatientData({ name: '', phone: '', email: '', cpf: '', birth_date: '', address: '', medical_history: '', allergies: '', notes: '' });
       setIsQuickPatientOpen(false);
     } catch (error) {
       console.error('Error creating quick patient:', error);
@@ -358,26 +364,29 @@ const Agenda = () => {
             </DialogContent>
           </Dialog>
 
-          {/* Quick Patient Dialog */}
+          {/* Quick Patient Dialog (Unificado com CRM) */}
           <Dialog open={isQuickPatientOpen} onOpenChange={setIsQuickPatientOpen}>
-            <DialogContent className="max-w-md">
+            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>Cadastro Rápido de Paciente</DialogTitle>
-                <DialogDescription>Cadastre os dados básicos para realizar o agendamento.</DialogDescription>
+                <DialogTitle className="flex items-center gap-2">
+                  <UserPlus className="w-5 h-5 text-primary" />
+                  Cadastrar Novo Paciente
+                </DialogTitle>
+                <DialogDescription>Preencha os dados do paciente para o agendamento e prontuário.</DialogDescription>
               </DialogHeader>
-              <form onSubmit={handleQuickPatientSubmit} className="space-y-4 mt-4">
-                <div className="space-y-2">
-                  <Label>Nome Completo</Label>
-                  <Input
-                    required
-                    value={quickPatientData.name}
-                    onChange={(e) => setQuickPatientData({ ...quickPatientData, name: e.target.value })}
-                    placeholder="Nome do paciente"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
+              <form onSubmit={handleQuickPatientSubmit} className="space-y-6 mt-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>WhatsApp / Telefone</Label>
+                    <Label>Nome Completo *</Label>
+                    <Input
+                      required
+                      value={quickPatientData.name}
+                      onChange={(e) => setQuickPatientData({ ...quickPatientData, name: e.target.value })}
+                      placeholder="Nome do paciente"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>WhatsApp / Telefone *</Label>
                     <Input
                       required
                       value={quickPatientData.phone}
@@ -386,15 +395,71 @@ const Agenda = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>CPF (Opcional)</Label>
+                    <Label>E-mail</Label>
                     <Input
+                      type="email"
+                      value={quickPatientData.email}
+                      onChange={(e) => setQuickPatientData({ ...quickPatientData, email: e.target.value })}
+                      placeholder="email@exemplo.com"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>CPF *</Label>
+                    <Input
+                      required
                       value={quickPatientData.cpf}
                       onChange={(e) => setQuickPatientData({ ...quickPatientData, cpf: e.target.value })}
                       placeholder="000.000.000-00"
                     />
                   </div>
+                  <div className="space-y-2">
+                    <Label>Data de Nascimento</Label>
+                    <Input
+                      type="date"
+                      value={quickPatientData.birth_date}
+                      onChange={(e) => setQuickPatientData({ ...quickPatientData, birth_date: e.target.value })}
+                    />
+                  </div>
+                  <div className="col-span-1 sm:col-span-2 space-y-2">
+                    <Label>Endereço</Label>
+                    <Input
+                      value={quickPatientData.address}
+                      onChange={(e) => setQuickPatientData({ ...quickPatientData, address: e.target.value })}
+                      placeholder="Rua, número, bairro, cidade/UF"
+                    />
+                  </div>
+                  <div className="col-span-1 sm:col-span-2 space-y-2">
+                    <Label>Histórico Médico</Label>
+                    <Textarea
+                      value={quickPatientData.medical_history}
+                      onChange={(e) => setQuickPatientData({ ...quickPatientData, medical_history: e.target.value })}
+                      placeholder="Doenças, medicamentos em uso, cirurgias anteriores..."
+                      rows={3}
+                    />
+                  </div>
+                  <div className="col-span-1 sm:col-span-2 space-y-2">
+                    <Label className="flex items-center gap-2 text-destructive">
+                      <AlertCircle className="w-4 h-4" />
+                      Alergias
+                    </Label>
+                    <Textarea
+                      value={quickPatientData.allergies}
+                      onChange={(e) => setQuickPatientData({ ...quickPatientData, allergies: e.target.value })}
+                      placeholder="Liste todas as alergias conhecidas..."
+                      rows={2}
+                    />
+                  </div>
+                  <div className="col-span-1 sm:col-span-2 space-y-2">
+                    <Label>Observações</Label>
+                    <Textarea
+                      value={quickPatientData.notes}
+                      onChange={(e) => setQuickPatientData({ ...quickPatientData, notes: e.target.value })}
+                      placeholder="Notas adicionais..."
+                      rows={2}
+                    />
+                  </div>
                 </div>
-                <div className="flex gap-3 pt-2">
+                <div className="flex gap-3 pt-4 sticky bottom-0 bg-background py-2 border-t">
                   <Button
                     type="button"
                     variant="outline"
