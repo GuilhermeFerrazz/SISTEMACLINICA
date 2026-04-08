@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { Html5QrcodeScanner } from 'html5-qrcode';
+import { Html5Qrcode } from 'html5-qrcode';
 import Layout from '../components/Layout';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -38,7 +38,7 @@ const MedicalRecords = () => {
   const [viewingPhoto, setViewingPhoto] = useState('');
   const [isCompressing, setIsCompressing] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
-  const [scanner, setScanner] = useState(null);
+  const [scannerInstance, setScannerInstance] = useState(null);
   const beforeInputRef = useRef(null);
   const afterInputRef = useRef(null);
   const [formData, setFormData] = useState({
@@ -181,7 +181,7 @@ const MedicalRecords = () => {
       });
       
       toast.success(`${product.name} adicionado!`);
-      closeScanner();
+      await closeScanner();
     } catch (error) {
       console.error('Error scanning QR code:', error);
       toast.error('Produto não encontrado');
@@ -190,25 +190,68 @@ const MedicalRecords = () => {
 
   const openScanner = () => {
     setIsScannerOpen(true);
-    // Reduzimos o delay para 400ms, o suficiente para o Radix montar o Dialog
-    setTimeout(() => {
-      const html5QrcodeScanner = new Html5QrcodeScanner(
-        'qr-reader-records',
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        false
-      );
-      html5QrcodeScanner.render(handleScanSuccess, () => {});
-      setScanner(html5QrcodeScanner);
-    }, 400);
   };
 
-  const closeScanner = () => {
-    if (scanner) {
-      scanner.clear().catch(e => console.error(e));
-      setScanner(null);
+  const closeScanner = async () => {
+    if (scannerInstance) {
+      try {
+        if (scannerInstance.isScanning) {
+          await scannerInstance.stop();
+        }
+        await scannerInstance.clear();
+      } catch (e) {
+        console.error('Erro ao fechar scanner:', e);
+      }
+      setScannerInstance(null);
     }
     setIsScannerOpen(false);
   };
+
+  // Efeito para gerenciar a inicialização da câmera quando a modal abrir
+  useEffect(() => {
+    let html5QrCode;
+    
+    if (isScannerOpen) {
+      // Pequeno delay para garantir que o Dialog do Radix montou o elemento no DOM
+      const timer = setTimeout(async () => {
+        const element = document.getElementById('qr-reader-records');
+        if (!element) return;
+
+        try {
+          html5QrCode = new Html5Qrcode("qr-reader-records");
+          setScannerInstance(html5QrCode);
+
+          const config = { 
+            fps: 10, 
+            qrbox: { width: 250, height: 250 },
+            aspectRatio: 1.0 
+          };
+
+          await html5QrCode.start(
+            { facingMode: "environment" }, 
+            config, 
+            (decodedText) => {
+              handleScanSuccess(decodedText);
+            },
+            (errorMessage) => {
+              // Erros de scan contínuos ignorados
+            }
+          );
+        } catch (err) {
+          console.error("Erro ao iniciar câmera:", err);
+          toast.error("Não foi possível acessar a câmera. Verifique as permissões.");
+          setIsScannerOpen(false);
+        }
+      }, 500);
+
+      return () => {
+        clearTimeout(timer);
+        if (html5QrCode && html5QrCode.isScanning) {
+          html5QrCode.stop().catch(e => console.error("Erro ao parar no cleanup:", e));
+        }
+      };
+    }
+  }, [isScannerOpen]);
 
   // Motor de Compressão Web para não estourar o banco do MongoDB
   const compressImage = (file) => {
