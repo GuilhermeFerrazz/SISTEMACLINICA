@@ -355,7 +355,7 @@ const Settings = () => {
                       <Upload className="w-3.5 h-3.5" />
                       {settings.logo_url ? 'Trocar Logo' : 'Enviar Logo'}
                     </Button>
-                    <p className="text-xs text-muted-foreground mt-1">PNG/JPG, máx 500KB</p>
+                    <p className="text-xs text-muted-foreground mt-1">PNG/JPG, máx 500KB. Esta imagem também será usada como ícone da página.</p>
                     <input
                       ref={fileInputRef}
                       type="file"
