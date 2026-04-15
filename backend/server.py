@@ -1625,6 +1625,32 @@ async def build_consent_pdf(consent: dict, settings: dict):
         if para:
             story.append(Paragraph(para, s_body))
 
+    # --- AUTORIZAÇÃO DE USO DE IMAGEM ---
+    use_image = consent.get("use_image_for_marketing")
+    if use_image is not None:
+        story.append(Spacer(1, sp_between))
+        story.append(Paragraph("AUTORIZAÇÃO DE USO DE IMAGEM", s_section))
+        
+        verbo = "<b>AUTORIZO</b>" if use_image is True else "<b>NÃO AUTORIZO</b>"
+        
+        image_text = (
+            f"Pelo presente instrumento, em caráter livre, prévio e voluntário, {verbo} "
+            "o Dr. Guilherme Ferraz e sua equipe a realizarem a captação das minhas imagens "
+            "(fotografias e/ou vídeos) antes, durante e após a realização dos procedimentos, "
+            "destinando-se exclusivamente aos seguintes fins:<br/><br/>"
+            "<b>Prontuário Clínico:</b> Registro, arquivamento e acompanhamento da evolução do tratamento, "
+            "mantendo-se o rigoroso sigilo profissional.<br/><br/>"
+            "<b>Divulgação Profissional:</b> Publicação e compartilhamento em redes sociais, sites, "
+            "portfólios e materiais publicitários da clínica, visando a demonstração de resultados "
+            "e finalidades didático-científicas.<br/><br/>"
+            "Declaro que a presente autorização de uso de imagem é concedida a título gratuito, em caráter "
+            "definitivo e por prazo indeterminado, não ensejando qualquer tipo de ônus, remuneração ou "
+            "compensação financeira. Compreendo que o tratamento destes dados ocorre em estrita conformidade "
+            "com a Lei Geral de Proteção de Dados (LGPD - Lei nº 13.709/2018), sendo-me resguardado o direito "
+            "de revogar este consentimento a qualquer momento, mediante solicitação formal e por escrito."
+        )
+        story.append(Paragraph(image_text, s_body))
+
     # Signature
     sig_image = consent.get("signature_image") or ""
     if sig_image and sig_image.startswith("data:image"):
@@ -1673,11 +1699,21 @@ async def build_consent_pdf(consent: dict, settings: dict):
         geo = f"{lat}, {lon}" if lat and lon else "Não disponível"
         if acc: geo += f" (Precisão: {acc}m)"
         
+        # Image Consent Status
+        use_image = consent.get("use_image_for_marketing")
+        if use_image is True:
+            image_consent_str = "<b>AUTORIZADO</b>"
+        elif use_image is False:
+            image_consent_str = "<b>NÃO AUTORIZADO</b>"
+        else:
+            image_consent_str = "Não informado"
+
         auth_data = [
             [Paragraph("IP do Dispositivo:", s_label), Paragraph(consent.get("ip_address") or "Não registrado", s_value)],
             [Paragraph("CPF Informado:", s_label),     Paragraph(str(display_cpf), s_value)],
             [Paragraph("Geolocalização:", s_label),    Paragraph(geo, s_value)],
             [Paragraph("Data/Hora:", s_label),         Paragraph(sfmt, s_value)],
+            [Paragraph("Uso de Imagem:", s_label),      Paragraph(image_consent_str, s_value)],
             [Paragraph("User-Agent:", s_label),        Paragraph(consent.get("user_agent") or "Não disponível", s_value)],
             [Paragraph("Token:", s_label),             Paragraph(token, s_value)],
         ]
