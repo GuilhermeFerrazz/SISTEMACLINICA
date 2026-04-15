@@ -134,6 +134,17 @@ const NumField = ({ label, value, onChange, unit, min = 0, max = 100 }) => (
   </div>
 );
 
+const decodeB64 = (str) => {
+  if (!str || !str.startsWith('B64:')) return str;
+  try {
+    const encodedPart = str.split(':')[1];
+    return decodeURIComponent(escape(window.atob(encodedPart)));
+  } catch (e) {
+    console.error('Erro ao decodificar B64:', e);
+    return str;
+  }
+};
+
 const CRMSettings = () => {
   const [templates, setTemplates] = useState([]);
   const [procedures, setProcedures] = useState([]);
@@ -366,7 +377,7 @@ const CRMSettings = () => {
                     <Switch checked={template.active} onCheckedChange={() => handleToggleActive(template)} data-testid={`toggle-crm-template-${template.id}`} />
                   </div>
                   <Card className="bg-white/70 p-4 rounded-lg mb-4 border-0">
-                    <p className="text-sm whitespace-pre-wrap text-muted-foreground">{template.message}</p>
+                    <p className="text-sm whitespace-pre-wrap text-muted-foreground">{decodeB64(template.message)}</p>
                   </Card>
                   {template.days_interval && (
                     <div className="flex items-center gap-2 text-xs text-muted-foreground mb-4">
@@ -645,7 +656,7 @@ const CRMSettings = () => {
                 </div>
                 <div>
                   <Label>Mensagem</Label>
-                  <Textarea value={editingTemplate.message} onChange={e => setEditingTemplate({ ...editingTemplate, message: e.target.value })} rows={8} className="font-mono text-sm" data-testid="edit-crm-template-message" />
+                  <Textarea value={decodeB64(editingTemplate.message)} onChange={e => setEditingTemplate({ ...editingTemplate, message: e.target.value })} rows={8} className="font-mono text-sm" data-testid="edit-crm-template-message" />
                 </div>
                 <div>
                   <Label className="text-xs text-muted-foreground">Clique para inserir:</Label>

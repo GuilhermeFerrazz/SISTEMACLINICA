@@ -336,12 +336,26 @@ _DEFAULT_TEMPLATES: dict = {
 
 
 def _get_template_msg(tmpl: dict | None, tmpl_type: str) -> str:
-    """Recupera o template do banco ou o padrão."""
+    """Recupera o template do banco ou o padrão, com suporte a decodificação de segurança (B64)."""
+    msg = ""
     if tmpl:
         msg = tmpl.get("message", "")
-        if msg:
-            return msg
-    return _DEFAULT_TEMPLATES.get(tmpl_type, "")
+    
+    if not msg:
+        msg = _DEFAULT_TEMPLATES.get(tmpl_type, "")
+
+    # Se a mensagem vier blindada em Base64 (prefixo B64:), decodificamos antes de usar.
+    if msg and msg.startswith("B64:"):
+        try:
+            import base64 as _b64
+            encoded_part = msg.split(":", 1)[1]
+            decoded_bytes = _b64.b64decode(encoded_part)
+            msg = decoded_bytes.decode("utf-8")
+        except Exception as e:
+            print(f"Erro ao decodificar template B64: {e}")
+            # Se falhar, mantém a mensagem original para não perder o conteúdo
+    
+    return msg
 
 
 def whatsapp_encode(message: str) -> str:

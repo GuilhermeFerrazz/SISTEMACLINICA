@@ -25,6 +25,17 @@ const PLACEHOLDERS = [
   { tag: "{clinica}", description: "Nome da clínica" }
 ];
 
+const decodeB64 = (str) => {
+  if (!str || !str.startsWith('B64:')) return str;
+  try {
+    const encodedPart = str.split(':')[1];
+    return decodeURIComponent(escape(window.atob(encodedPart)));
+  } catch (e) {
+    console.error('Erro ao decodificar B64:', e);
+    return str;
+  }
+};
+
 const AgendaSettings = () => {
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -174,7 +185,7 @@ const AgendaSettings = () => {
                   </div>
 
                   <Card className="bg-white/70 p-4 rounded-lg mb-4 border-0">
-                    <p className="text-sm whitespace-pre-wrap text-muted-foreground">{template.message}</p>
+                    <p className="text-sm whitespace-pre-wrap text-muted-foreground">{decodeB64(template.message)}</p>
                   </Card>
 
                   <div className="flex flex-wrap gap-2 mb-4">
@@ -267,7 +278,7 @@ const AgendaSettings = () => {
                 <div>
                   <Label>Mensagem</Label>
                   <Textarea 
-                    value={editingTemplate.message}
+                    value={decodeB64(editingTemplate.message)}
                     onChange={(e) => setEditingTemplate({ ...editingTemplate, message: e.target.value })}
                     rows={8}
                     className="font-mono text-sm"
