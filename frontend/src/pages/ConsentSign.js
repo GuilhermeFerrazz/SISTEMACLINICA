@@ -16,6 +16,7 @@ const ConsentSign = () => {
   const [signatureEmpty, setSignatureEmpty] = useState(true);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(null);
+  const [useImageForMarketing, setUseImageForMarketing] = useState(true);
   const canvasRef = useRef(null);
   const isDrawingRef = useRef(false);
   const lastPosRef = useRef({ x: 0, y: 0 });
@@ -173,7 +174,8 @@ const ConsentSign = () => {
         latitude: geolocation?.latitude || null,
         longitude: geolocation?.longitude || null,
         accuracy: geolocation?.accuracy || null,
-        user_agent: navigator.userAgent
+        user_agent: navigator.userAgent,
+        use_image_for_marketing: useImageForMarketing
       });
       setSuccess(true);
     } catch (err) {
@@ -331,6 +333,35 @@ const ConsentSign = () => {
             Declaro que li e compreendi o termo acima. Confirmo que todas as informações são verdadeiras e concordo com os termos apresentados.
           </span>
         </label>
+
+        {/* Use Image for Marketing - Switch Button */}
+        <div style={styles.imageConsentContainer}>
+          <div style={styles.imageConsentLabel}>
+            <span style={styles.imageConsentTitle}>Autorizo o uso da minha imagem</span>
+            <p style={styles.imageConsentDescription}>
+              Autorizo a clínica a utilizar minhas fotos para fins de prontuário médico e divulgação em redes sociais.
+            </p>
+          </div>
+          <label style={styles.switchContainer}>
+            <input
+              type="checkbox"
+              checked={useImageForMarketing}
+              onChange={(e) => setUseImageForMarketing(e.target.checked)}
+              style={styles.switchInput}
+              data-testid="use-image-for-marketing-switch"
+            />
+            <span style={{
+              ...styles.switchTrack,
+              background: useImageForMarketing ? '#16a34a' : '#d1d5db'
+            }}>
+              <span style={{
+                ...styles.switchThumb,
+                transform: useImageForMarketing ? 'translateX(20px)' : 'translateX(0)'
+              }} />
+            </span>
+            <span style={styles.switchText}>{useImageForMarketing ? 'SIM' : 'NÃO'}</span>
+          </label>
+        </div>
 
         {error && <p style={styles.errorMsg}>{error}</p>}
 
@@ -532,6 +563,71 @@ const styles = {
     marginTop: '2px',
     flexShrink: 0,
     accentColor: '#1a3a1a',
+  },
+  imageConsentContainer: {
+    background: '#f0f4f0',
+    border: '1px solid #d1d5db',
+    borderRadius: '10px',
+    padding: '14px',
+    marginBottom: '20px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '16px',
+  },
+  imageConsentLabel: {
+    flex: 1,
+  },
+  imageConsentTitle: {
+    display: 'block',
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#1a1a2e',
+    marginBottom: '4px',
+  },
+  imageConsentDescription: {
+    fontSize: '12px',
+    color: '#666',
+    margin: 0,
+    lineHeight: '1.4',
+  },
+  switchContainer: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#333',
+    flexShrink: 0,
+  },
+  switchInput: {
+    display: 'none',
+  },
+  switchTrack: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    width: '44px',
+    height: '24px',
+    borderRadius: '12px',
+    background: '#d1d5db',
+    padding: '2px',
+    transition: 'background 0.3s ease',
+    position: 'relative',
+  },
+  switchThumb: {
+    display: 'inline-block',
+    width: '20px',
+    height: '20px',
+    borderRadius: '50%',
+    background: '#fff',
+    transition: 'transform 0.3s ease',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+  },
+  switchText: {
+    fontSize: '13px',
+    fontWeight: '600',
+    minWidth: '28px',
   },
   errorMsg: {
     color: '#dc2626',

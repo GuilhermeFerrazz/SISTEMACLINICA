@@ -257,6 +257,15 @@ class TransactionCreate(BaseModel):
     date: str = Field(..., pattern=r'^\d{4}-\d{2}-\d{2}$')
     status: Optional[str] = Field("paid", pattern=r'^(paid|pending|cancelled)$')
 
+class ConsentSignPayload(BaseModel):
+    cpf: str
+    signature_image: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    accuracy: Optional[float] = None
+    user_agent: str
+    use_image_for_marketing: bool = True  # Novo campo para consentimento de imagem
+
 class ConsentLinkCreate(BaseModel):
     patient_id: str = Field(..., min_length=1)
     procedure_id: Optional[str] = None
@@ -1357,10 +1366,8 @@ async def get_consent_public(token: str):
     if not consent:
         raise HTTPException(status_code=404, detail="Link inválido ou expirado")
     return consent
-
 @api_router.post("/consent/public/{token}/sign")
-async def sign_consent_public(token: str, request: Request):
-    data = await request.json()
+async def sign_consent_public(token: str, payload: ConsentSignPayload, request: Request):
     consent = await db.consents.find_one({"token": token})
     if not consent:
         raise HTTPException(status_code=404, detail="Link inválido")
@@ -1371,16 +1378,18 @@ async def sign_consent_public(token: str, request: Request):
     await db.consents.update_one({"token": token}, {"$set": {
         "status": "signed",
         "signed_at": datetime.now(timezone.utc).isoformat(),
-        "cpf": data.get("cpf"),
-        "signature_image": data.get("signature_image"),
-        "latitude": data.get("latitude"),
-        "longitude": data.get("longitude"),
-        "accuracy": data.get("accuracy"),
-        "user_agent": data.get("user_agent"),
-        "ip_address": client_ip
+        "cpf": payload.cpf,
+        "signature_image": payload.signature_image,
+        "geolocation": {
+            "latitude": payload.latitude,
+            "longitude": payload.longitude,
+            "accuracy": payload.accuracy
+        },
+        "user_agent": payload.user_agent,
+        "client_ip": client_ip,
+        "use_image_for_marketing": payload.use_image_for_marketing # Salva a preferência do paciente
     }})
-    await db.patients.update_one({"id": consent.get("patient_id")}, {"$set": {
-        "consent_signed": True,
+    return {"message": "Termo assinado com sucesso"}igned": True,
         "consent_date": datetime.now(timezone.utc).isoformat()
     }})
     return {"message": "Termo assinado com sucesso"}
