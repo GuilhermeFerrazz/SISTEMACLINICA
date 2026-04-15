@@ -1389,9 +1389,6 @@ async def sign_consent_public(token: str, payload: ConsentSignPayload, request: 
         "client_ip": client_ip,
         "use_image_for_marketing": payload.use_image_for_marketing # Salva a preferência do paciente
     }})
-    return {"message": "Termo assinado com sucesso"}igned": True,
-        "consent_date": datetime.now(timezone.utc).isoformat()
-    }})
     return {"message": "Termo assinado com sucesso"}
 
 @api_router.get("/consent/pending/{patient_id}")
