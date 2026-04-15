@@ -143,13 +143,13 @@ const PatientsDashboard = () => {
         `${API}/patients/${patientId}/whatsapp-message?message_type=${type}`,
         { withCredentials: true }
       );
-      if (data.message && data.phone) {
+      if (data.whatsapp_url) {
+        window.open(data.whatsapp_url, '_blank');
+      } else if (data.message && data.phone) {
         const phone = data.phone.replace(/\D/g, '');
         const finalPhone = phone.startsWith('55') ? phone : `55${phone}`;
         const whatsappUrl = `https://wa.me/${finalPhone}?text=${encodeURIComponent(data.message)}`;
         window.open(whatsappUrl, '_blank');
-      } else if (data.whatsapp_url) {
-        window.open(data.whatsapp_url, '_blank');
       }
     } catch {
       toast.error('Erro ao gerar link do WhatsApp');

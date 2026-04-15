@@ -35,10 +35,14 @@ const CRMAniversarios = () => {
   const handleSendWhatsApp = async (patient) => {
     try {
       const { data } = await axios.get(`${API}/patients/${patient.id}/whatsapp-message?message_type=birthday`, { withCredentials: true });
-      let phone = (patient.phone || '').replace(/[\s\-\(\)]/g, '');
-      if (phone && !phone.startsWith('55')) phone = '55' + phone;
-      const url = `https://wa.me/${phone}?text=${encodeURIComponent(data.message)}`;
-      window.open(url, '_blank');
+      if (data.whatsapp_url) {
+        window.open(data.whatsapp_url, '_blank');
+      } else {
+        let phone = (patient.phone || '').replace(/[\s\-\(\)]/g, '');
+        if (phone && !phone.startsWith('55')) phone = '55' + phone;
+        const url = `https://wa.me/${phone}?text=${encodeURIComponent(data.message)}`;
+        window.open(url, '_blank');
+      }
     } catch (error) {
       toast.error('Erro ao gerar link do WhatsApp');
     }
