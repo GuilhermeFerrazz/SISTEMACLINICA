@@ -1365,22 +1365,60 @@ async def get_admin_stats(current_user: dict = Depends(get_admin_user)):
 async def govbr_login(token: str):
     """
     Inicia o fluxo de autenticação GOV.BR.
-    Redireciona para o provedor de identidade do governo.
+    Para fins de teste, redireciona para um simulador interno.
     """
-    client_id = os.environ.get("GOVBR_CLIENT_ID", "simulado_client_id")
-    redirect_uri = quote(f"{os.environ.get('BACKEND_URL')}/api/auth/govbr/callback")
-    scope = "openid+email+profile+govbr_confiabilidades"
+    backend_url = os.environ.get('BACKEND_URL', 'http://localhost:8000')
+    # Se houver um GOVBR_CLIENT_ID real configurado, usa a URL oficial
+    if os.environ.get("GOVBR_CLIENT_ID"):
+        client_id = os.environ.get("GOVBR_CLIENT_ID")
+        redirect_uri = quote(f"{backend_url}/api/auth/govbr/callback")
+        scope = "openid+email+profile+govbr_confiabilidades"
+        govbr_url = (
+            f"https://sso.staging.acesso.gov.br/authorize?"
+            f"response_type=code&"
+            f"client_id={client_id}&"
+            f"scope={scope}&"
+            f"redirect_uri={redirect_uri}&"
+            f"state={token}"
+        )
+    else:
+        # Modo de Simulação: Abre uma página interna que simula o GOV.BR
+        govbr_url = f"{backend_url}/api/auth/govbr/simulator?state={token}"
     
-    # URL de Staging/Homologação para testes
-    govbr_url = (
-        f"https://sso.staging.acesso.gov.br/authorize?"
-        f"response_type=code&"
-        f"client_id={client_id}&"
-        f"scope={scope}&"
-        f"redirect_uri={redirect_uri}&"
-        f"state={token}"
-    )
     return {"url": govbr_url}
+
+@api_router.get("/auth/govbr/simulator")
+async def govbr_simulator(state: str):
+    """
+    Página que simula visualmente o login do GOV.BR para testes de UX.
+    """
+    html_content = f"""
+    <html>
+        <head>
+            <title>Simulador GOV.BR - SISTEMACLINICA</title>
+            <style>
+                body {{ font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f0f2f5; }}
+                .card {{ background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; max-width: 400px; }}
+                .logo {{ width: 150px; margin-bottom: 20px; }}
+                .btn {{ background: #004587; color: white; border: none; padding: 12px 24px; border-radius: 25px; font-weight: bold; cursor: pointer; width: 100%; font-size: 16px; }}
+                .btn:hover {{ background: #003566; }}
+                .info {{ color: #666; font-size: 14px; margin-top: 20px; }}
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <img src="https://www.gov.br/++theme++padrao_govbr/img/govbr-logo-large.png" class="logo" alt="gov.br">
+                <h3>Simulador de Assinatura</h3>
+                <p>Esta é uma tela de teste do SISTEMACLINICA para simular a autorização de assinatura avançada.</p>
+                <button class="btn" onclick="window.location.href='/api/auth/govbr/callback?code=simulado_123&state={state}'">
+                    AUTORIZAR ASSINATURA
+                </button>
+                <div class="info">Em produção, o paciente veria a tela real do Governo Federal.</div>
+            </div>
+        </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
 
 @api_router.get("/auth/govbr/callback")
 async def govbr_callback(code: str, state: str):
