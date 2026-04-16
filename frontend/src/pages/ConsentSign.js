@@ -17,6 +17,7 @@ const ConsentSign = () => {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(null);
   const [useImageForMarketing, setUseImageForMarketing] = useState(true);
+  const [assinafyUrl, setAssinafyUrl] = useState(null);
   const canvasRef = useRef(null);
   const isDrawingRef = useRef(false);
   const lastPosRef = useRef({ x: 0, y: 0 });

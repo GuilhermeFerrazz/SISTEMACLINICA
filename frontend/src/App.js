@@ -32,6 +32,9 @@ const FaviconUpdater = () => {
   const { user } = useAuth();
   
   useEffect(() => {
+    // Não tenta carregar favicon dinâmico se estiver na página pública de assinatura
+    if (window.location.pathname.includes('/assinar/')) return;
+
     const updateFavicon = async () => {
       try {
         const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
