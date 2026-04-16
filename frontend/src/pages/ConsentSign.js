@@ -17,6 +17,7 @@ const ConsentSign = () => {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(null);
   const [useImageForMarketing, setUseImageForMarketing] = useState(true);
+  const [govBrSigning, setGovBrSigning] = useState(false);
   const canvasRef = useRef(null);
   const isDrawingRef = useRef(false);
   const lastPosRef = useRef({ x: 0, y: 0 });
@@ -24,6 +25,16 @@ const ConsentSign = () => {
   useEffect(() => {
     fetchConsentData();
     requestGeolocation();
+
+    // Listener para o sucesso do Pop-up GOV.BR
+    const handleMessage = (event) => {
+      if (event.data?.type === 'GOVBR_SUCCESS') {
+        console.log("Sucesso no GOV.BR:", event.data);
+        handleSign(true); // Finaliza a assinatura após o retorno do GOV.BR
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -158,8 +169,8 @@ const ConsentSign = () => {
     };
   }, [consentData, startDraw, draw, endDraw]);
 
-  const handleSign = async () => {
-    if (signatureEmpty) { setError('Por favor, desenhe sua assinatura.'); return; }
+  const handleSign = async (isGovBr = false) => {
+    if (signatureEmpty && !isGovBr) { setError('Por favor, desenhe sua assinatura.'); return; }
     const cpfNums = cpf.replace(/\D/g, '');
     if (cpfNums.length !== 11) { setError('CPF inválido. Digite os 11 dígitos.'); return; }
     if (!acceptedTerms) { setError('Você precisa aceitar os termos.'); return; }
@@ -167,7 +178,7 @@ const ConsentSign = () => {
     setSigning(true);
     setError(null);
     try {
-      const signatureImage = canvasRef.current.toDataURL('image/png');
+      const signatureImage = canvasRef.current ? canvasRef.current.toDataURL('image/png') : null;
       await axios.post(`${API}/consent/public/${token}/sign`, {
         cpf: cpfNums,
         signature_image: signatureImage,
@@ -175,13 +186,41 @@ const ConsentSign = () => {
         longitude: geolocation?.longitude || null,
         accuracy: geolocation?.accuracy || null,
         user_agent: navigator.userAgent,
-        use_image_for_marketing: useImageForMarketing
+        use_image_for_marketing: useImageForMarketing,
+        is_govbr: isGovBr // Flag para indicar assinatura avançada
       });
       setSuccess(true);
     } catch (err) {
       setError(err.response?.data?.detail || 'Erro ao assinar. Tente novamente.');
     } finally {
       setSigning(false);
+      setGovBrSigning(false);
+    }
+  };
+
+  const handleGovBrLogin = async () => {
+    if (cpf.replace(/\D/g, '').length !== 11) { setError('Digite seu CPF antes de assinar com GOV.BR.'); return; }
+    if (!acceptedTerms) { setError('Você precisa aceitar os termos.'); return; }
+    
+    setGovBrSigning(true);
+    try {
+      // Abre o popup
+      const width = 500;
+      const height = 650;
+      const left = (window.screen.width / 2) - (width / 2);
+      const top = (window.screen.height / 2) - (height / 2);
+      
+      // Chama o backend para obter a URL do GOV.BR
+      const { data } = await axios.get(`${API}/auth/govbr/login?token=${token}`);
+      
+      window.open(
+        data.url,
+        'Assinatura GOV.BR',
+        `width=${width},height=${height},top=${top},left=${left},scrollbars=yes,status=no,resizable=yes`
+      );
+    } catch (err) {
+      setError('Erro ao iniciar assinatura GOV.BR.');
+      setGovBrSigning(false);
     }
   };
 
@@ -365,18 +404,43 @@ const ConsentSign = () => {
 
         {error && <p style={styles.errorMsg}>{error}</p>}
 
-        <button
-          onClick={handleSign}
-          disabled={signing}
-          style={{
-            ...styles.signButton,
-            opacity: signing ? 0.6 : 1,
-            cursor: signing ? 'not-allowed' : 'pointer'
-          }}
-          data-testid="submit-signature-btn"
-        >
-          {signing ? 'Assinando...' : 'Assinar Termo de Consentimento'}
-        </button>
+        <div style={styles.buttonGroup}>
+          <button
+            onClick={() => handleSign(false)}
+            disabled={signing || govBrSigning}
+            style={{
+              ...styles.signButton,
+              opacity: (signing || govBrSigning) ? 0.6 : 1,
+              cursor: (signing || govBrSigning) ? 'not-allowed' : 'pointer'
+            }}
+            data-testid="submit-signature-btn"
+          >
+            {signing && !govBrSigning ? 'Assinando...' : 'Assinar com Desenho'}
+          </button>
+
+          <div style={styles.divider}>
+            <span style={styles.dividerLine}></span>
+            <span style={styles.dividerText}>OU</span>
+            <span style={styles.dividerLine}></span>
+          </div>
+
+          <button
+            onClick={handleGovBrLogin}
+            disabled={signing || govBrSigning}
+            style={{
+              ...styles.govBrButton,
+              opacity: (signing || govBrSigning) ? 0.6 : 1,
+              cursor: (signing || govBrSigning) ? 'not-allowed' : 'pointer'
+            }}
+          >
+            <img 
+              src="https://www.gov.br/++theme++padrao_govbr/img/govbr-logo-large.png" 
+              alt="gov.br" 
+              style={{ height: '20px', marginRight: '10px' }} 
+            />
+            {govBrSigning ? 'Aguardando GOV.BR...' : 'Assinar com GOV.BR'}
+          </button>
+        </div>
 
         {/* Legal Notice */}
         <div style={styles.legalFooter}>
@@ -637,6 +701,12 @@ const styles = {
     background: '#fef2f2',
     borderRadius: '6px',
   },
+  buttonGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+    marginBottom: '16px',
+  },
   signButton: {
     width: '100%',
     padding: '14px',
@@ -647,7 +717,36 @@ const styles = {
     fontSize: '16px',
     fontWeight: '600',
     cursor: 'pointer',
-    marginBottom: '16px',
+  },
+  govBrButton: {
+    width: '100%',
+    padding: '14px',
+    background: '#004587',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '10px',
+    fontSize: '16px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  divider: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    margin: '8px 0',
+  },
+  dividerLine: {
+    flex: 1,
+    height: '1px',
+    background: '#e5e7eb',
+  },
+  dividerText: {
+    fontSize: '12px',
+    color: '#9ca3af',
+    fontWeight: '600',
   },
   legalFooter: {
     background: '#f8f9fa',

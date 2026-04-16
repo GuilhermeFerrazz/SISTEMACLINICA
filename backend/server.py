@@ -3,7 +3,7 @@ import os
 os.environ.setdefault("PYTHONUTF8", "1")  # Força UTF-8 em todo o processo Python
 
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
@@ -259,12 +259,13 @@ class TransactionCreate(BaseModel):
 
 class ConsentSignPayload(BaseModel):
     cpf: str
-    signature_image: str
+    signature_image: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     accuracy: Optional[float] = None
     user_agent: str
-    use_image_for_marketing: bool = True  # Novo campo para consentimento de imagem
+    use_image_for_marketing: bool = True
+    is_govbr: bool = False  # Indica se a assinatura foi via GOV.BR
 
 class ConsentLinkCreate(BaseModel):
     patient_id: str = Field(..., min_length=1)
@@ -1358,6 +1359,57 @@ async def get_admin_stats(current_user: dict = Depends(get_admin_user)):
         "total_products": await db.products.count_documents({})
     }
 
+# ==================== GOV.BR AUTH (POPUP FLOW) ====================
+
+@api_router.get("/auth/govbr/login")
+async def govbr_login(token: str):
+    """
+    Inicia o fluxo de autenticação GOV.BR.
+    Redireciona para o provedor de identidade do governo.
+    """
+    client_id = os.environ.get("GOVBR_CLIENT_ID", "simulado_client_id")
+    redirect_uri = quote(f"{os.environ.get('BACKEND_URL')}/api/auth/govbr/callback")
+    scope = "openid+email+profile+govbr_confiabilidades"
+    
+    # URL de Staging/Homologação para testes
+    govbr_url = (
+        f"https://sso.staging.acesso.gov.br/authorize?"
+        f"response_type=code&"
+        f"client_id={client_id}&"
+        f"scope={scope}&"
+        f"redirect_uri={redirect_uri}&"
+        f"state={token}"
+    )
+    return {"url": govbr_url}
+
+@api_router.get("/auth/govbr/callback")
+async def govbr_callback(code: str, state: str):
+    """
+    Callback do GOV.BR. 
+    Recebe o código, troca pelo token e fecha o popup enviando mensagem para a janela pai.
+    """
+    # Aqui em produção faríamos o POST para trocar o 'code' pelo 'access_token'
+    # Para fins de demonstração do fluxo de popup, vamos simular o sucesso.
+    
+    html_content = f"""
+    <html>
+        <body>
+            <script>
+                // Envia mensagem para a janela que abriu o popup
+                window.opener.postMessage({{
+                    type: 'GOVBR_SUCCESS',
+                    code: '{code}',
+                    token: '{state}'
+                }}, '*');
+                // Fecha o popup
+                window.close();
+            </script>
+            <p>Autenticação concluída! Fechando janela...</p>
+        </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
+
 # ==================== CONSENT ====================
 
 @api_router.get("/consent/public/{token}")
@@ -1380,6 +1432,7 @@ async def sign_consent_public(token: str, payload: ConsentSignPayload, request: 
         "signed_at": datetime.now(timezone.utc).isoformat(),
         "cpf": payload.cpf,
         "signature_image": payload.signature_image,
+        "is_govbr": payload.is_govbr,
         "geolocation": {
             "latitude": payload.latitude,
             "longitude": payload.longitude,
@@ -1387,7 +1440,7 @@ async def sign_consent_public(token: str, payload: ConsentSignPayload, request: 
         },
         "user_agent": payload.user_agent,
         "client_ip": client_ip,
-        "use_image_for_marketing": payload.use_image_for_marketing # Salva a preferência do paciente
+        "use_image_for_marketing": payload.use_image_for_marketing
     }})
     return {"message": "Termo assinado com sucesso"}
 
@@ -1676,6 +1729,14 @@ async def build_consent_pdf(consent: dict, settings: dict):
     # --- DADOS DE AUTENTICAÇÃO (VALIDADE JURÍDICA) ---
     if consent.get("signed_at"):
         story.append(Spacer(1, sp_between * 2))
+        
+        # Selo de Assinatura Avançada GOV.BR
+        if consent.get("is_govbr"):
+            gov_style = sty("gov_seal", fontSize=fs_section, textColor=HexColor("#004587"), fontName="Helvetica-Bold", alignment=TA_CENTER, spaceAfter=2*mm)
+            story.append(Paragraph("ASSINATURA ELETRÔNICA AVANÇADA (GOV.BR)", gov_style))
+            story.append(Paragraph("Documento assinado digitalmente através da plataforma GOV.BR conforme Lei 14.063/2020.", 
+                         sty("gov_desc", fontSize=fs_small, alignment=TA_CENTER, spaceAfter=sp_section)))
+        
         story.append(Paragraph("DADOS DE AUTENTICAÇÃO (VALIDADE JURÍDICA)", s_section))
         
         # QR Code Generation
@@ -1709,7 +1770,8 @@ async def build_consent_pdf(consent: dict, settings: dict):
             image_consent_str = "Não informado"
 
         auth_data = [
-            [Paragraph("IP do Dispositivo:", s_label), Paragraph(consent.get("ip_address") or "Não registrado", s_value)],
+            [Paragraph("Tipo de Assinatura:", s_label), Paragraph("Avançada (GOV.BR)" if consent.get("is_govbr") else "Simples (Eletrônica)", s_value)],
+            [Paragraph("IP do Dispositivo:", s_label), Paragraph(consent.get("client_ip") or consent.get("ip_address") or "Não registrado", s_value)],
             [Paragraph("CPF Informado:", s_label),     Paragraph(str(display_cpf), s_value)],
             [Paragraph("Geolocalização:", s_label),    Paragraph(geo, s_value)],
             [Paragraph("Data/Hora:", s_label),         Paragraph(sfmt, s_value)],
