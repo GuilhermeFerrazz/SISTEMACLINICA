@@ -167,7 +167,6 @@ const ConsentSign = () => {
   }, [consentData, startDraw, draw, endDraw]);
 
   const handleSign = async () => {
-    if (signatureEmpty) { setError('Por favor, desenhe sua assinatura.'); return; }
     const cpfNums = cpf.replace(/\D/g, '');
     if (cpfNums.length !== 11) { setError('CPF inválido. Digite os 11 dígitos.'); return; }
     if (!acceptedTerms) { setError('Você precisa aceitar os termos.'); return; }
