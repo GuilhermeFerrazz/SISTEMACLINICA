@@ -17,7 +17,6 @@ const ConsentSign = () => {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(null);
   const [useImageForMarketing, setUseImageForMarketing] = useState(true);
-  const [govBrSigning, setGovBrSigning] = useState(false);
   const canvasRef = useRef(null);
   const isDrawingRef = useRef(false);
   const lastPosRef = useRef({ x: 0, y: 0 });
@@ -26,15 +25,12 @@ const ConsentSign = () => {
     fetchConsentData();
     requestGeolocation();
 
-    // Listener para o sucesso do Pop-up GOV.BR
-    const handleMessage = (event) => {
-      if (event.data?.type === 'GOVBR_SUCCESS') {
-        console.log("Sucesso no GOV.BR:", event.data);
-        handleSign(true); // Finaliza a assinatura após o retorno do GOV.BR
-      }
+    // Assinafy Embed Listener (Futuro)
+    const handleAssinafyMessage = (event) => {
+      // Lógica de recebimento de confirmação da Assinafy
     };
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
+    window.addEventListener('message', handleAssinafyMessage);
+    return () => window.removeEventListener('message', handleAssinafyMessage);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -169,8 +165,8 @@ const ConsentSign = () => {
     };
   }, [consentData, startDraw, draw, endDraw]);
 
-  const handleSign = async (isGovBr = false) => {
-    if (signatureEmpty && !isGovBr) { setError('Por favor, desenhe sua assinatura.'); return; }
+  const handleSign = async () => {
+    if (signatureEmpty) { setError('Por favor, desenhe sua assinatura.'); return; }
     const cpfNums = cpf.replace(/\D/g, '');
     if (cpfNums.length !== 11) { setError('CPF inválido. Digite os 11 dígitos.'); return; }
     if (!acceptedTerms) { setError('Você precisa aceitar os termos.'); return; }
@@ -187,40 +183,13 @@ const ConsentSign = () => {
         accuracy: geolocation?.accuracy || null,
         user_agent: navigator.userAgent,
         use_image_for_marketing: useImageForMarketing,
-        is_govbr: isGovBr // Flag para indicar assinatura avançada
+        is_govbr: false
       });
       setSuccess(true);
     } catch (err) {
       setError(err.response?.data?.detail || 'Erro ao assinar. Tente novamente.');
     } finally {
       setSigning(false);
-      setGovBrSigning(false);
-    }
-  };
-
-  const handleGovBrLogin = async () => {
-    if (cpf.replace(/\D/g, '').length !== 11) { setError('Digite seu CPF antes de assinar com GOV.BR.'); return; }
-    if (!acceptedTerms) { setError('Você precisa aceitar os termos.'); return; }
-    
-    setGovBrSigning(true);
-    try {
-      // Abre o popup
-      const width = 500;
-      const height = 650;
-      const left = (window.screen.width / 2) - (width / 2);
-      const top = (window.screen.height / 2) - (height / 2);
-      
-      // Chama o backend para obter a URL do GOV.BR
-      const { data } = await axios.get(`${API}/auth/govbr/login?token=${token}`);
-      
-      window.open(
-        data.url,
-        'Assinatura GOV.BR',
-        `width=${width},height=${height},top=${top},left=${left},scrollbars=yes,status=no,resizable=yes`
-      );
-    } catch (err) {
-      setError('Erro ao iniciar assinatura GOV.BR.');
-      setGovBrSigning(false);
     }
   };
 
@@ -288,159 +257,113 @@ const ConsentSign = () => {
   return (
     <div style={styles.container}>
       <div style={styles.card}>
-        {/* Header */}
-        <div style={styles.header}>
-          <div style={styles.shieldIcon}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        {assinafyUrl ? (
+          <div style={{ height: '600px', width: '100%' }}>
+            <iframe
+              src={assinafyUrl}
+              style={{ width: '100%', height: '100%', border: 'none' }}
+              title="Assinatura Digital"
+            />
           </div>
-          <div>
-            <h1 style={styles.title}>Termo de Consentimento</h1>
-            <p style={styles.subtitle}>{consentData.procedure_name}</p>
-          </div>
-        </div>
+        ) : (
+          <>
+            {/* Header */}
+            <div style={styles.header}>
+              <div style={styles.shieldIcon}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              </div>
+              <div>
+                <h1 style={styles.title}>Termo de Consentimento</h1>
+                <p style={styles.subtitle}>{consentData.procedure_name}</p>
+              </div>
+            </div>
 
-        <div style={styles.patientBadge}>
-          Paciente: <strong>{consentData.patient_name}</strong>
-        </div>
+            <div style={styles.patientBadge}>
+              Paciente: <strong>{consentData.patient_name}</strong>
+            </div>
 
-        {/* Consent Text */}
-        <div style={styles.consentBox}>
-          <pre style={styles.consentText}>{consentData.consent_text}</pre>
-        </div>
+            {/* Consent Text */}
+            <div style={styles.consentBox}>
+              <pre style={styles.consentText}>{consentData.consent_text}</pre>
+            </div>
+          </>
+        )}
 
-        {/* CPF */}
-        <div style={styles.fieldGroup}>
-          <label style={styles.label}>CPF do Paciente *</label>
-          <input
-            type="text"
-            value={cpf}
-            onChange={handleCpfChange}
-            placeholder="000.000.000-00"
-            style={styles.input}
-            maxLength={14}
-            data-testid="consent-cpf-input"
-          />
-        </div>
+        {!assinafyUrl && (
+          <>
+            {/* CPF */}
+            <div style={styles.fieldGroup}>
+              <label style={styles.label}>CPF do Paciente *</label>
+              <input
+                type="text"
+                value={cpf}
+                onChange={handleCpfChange}
+                placeholder="000.000.000-00"
+                style={styles.input}
+                maxLength={14}
+                data-testid="consent-cpf-input"
+              />
+            </div>
 
-        {/* Signature */}
-        <div style={styles.fieldGroup}>
-          <div style={styles.signatureHeader}>
-            <label style={styles.label}>Assinatura Digital *</label>
-            <button onClick={clearSignature} style={styles.clearBtn} data-testid="clear-signature-btn">
-              Limpar
+            {/* Accept Terms */}
+            <label style={styles.checkboxLabel} data-testid="accept-terms-label">
+              <input
+                type="checkbox"
+                checked={acceptedTerms}
+                onChange={(e) => setAcceptedTerms(e.target.checked)}
+                style={styles.checkbox}
+                data-testid="accept-terms-checkbox"
+              />
+              <span>
+                Declaro que li e compreendi o termo acima. Confirmo que todas as informações são verdadeiras e concordo com os termos apresentados.
+              </span>
+            </label>
+
+            {/* Use Image for Marketing - Switch Button */}
+            <div style={styles.imageConsentContainer}>
+              <div style={styles.imageConsentLabel}>
+                <span style={styles.imageConsentTitle}>Autorizo o uso da minha imagem</span>
+                <p style={styles.imageConsentDescription}>
+                  Autorizo a clínica a utilizar minhas fotos para fins de prontuário médico e divulgação em redes sociais.
+                </p>
+              </div>
+              <label style={styles.switchContainer}>
+                <input
+                  type="checkbox"
+                  checked={useImageForMarketing}
+                  onChange={(e) => setUseImageForMarketing(e.target.checked)}
+                  style={styles.switchInput}
+                  data-testid="use-image-for-marketing-switch"
+                />
+                <span style={{
+                  ...styles.switchTrack,
+                  background: useImageForMarketing ? '#16a34a' : '#d1d5db'
+                }}>
+                  <span style={{
+                    ...styles.switchThumb,
+                    transform: useImageForMarketing ? 'translateX(20px)' : 'translateX(0)'
+                  }} />
+                </span>
+                <span style={styles.switchText}>{useImageForMarketing ? 'SIM' : 'NÃO'}</span>
+              </label>
+            </div>
+
+            {error && <p style={styles.errorMsg}>{error}</p>}
+
+            <button
+              onClick={handleSign}
+              disabled={signing}
+              style={{
+                ...styles.signButton,
+                opacity: signing ? 0.6 : 1,
+                cursor: signing ? 'not-allowed' : 'pointer'
+              }}
+              data-testid="submit-signature-btn"
+            >
+              {signing ? 'Preparando Assinatura...' : 'Iniciar Assinatura Digital'}
             </button>
-          </div>
-          <div style={styles.canvasWrapper}>
-            <canvas
-              ref={canvasRef}
-              style={styles.canvas}
-              data-testid="signature-canvas"
-            />
-            {signatureEmpty && (
-              <p style={styles.canvasPlaceholder}>Desenhe sua assinatura aqui</p>
-            )}
-          </div>
-        </div>
-
-        {/* Geolocation Status */}
-        <div style={styles.geoStatus}>
-          {geolocation ? (
-            <span style={styles.geoOk}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-              Geolocalização capturada
-            </span>
-          ) : geoError ? (
-            <span style={styles.geoWarn}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-              {geoError}
-            </span>
-          ) : (
-            <span style={styles.geoLoading}>Obtendo localização...</span>
-          )}
-        </div>
-
-        {/* Accept Terms */}
-        <label style={styles.checkboxLabel} data-testid="accept-terms-label">
-          <input
-            type="checkbox"
-            checked={acceptedTerms}
-            onChange={(e) => setAcceptedTerms(e.target.checked)}
-            style={styles.checkbox}
-            data-testid="accept-terms-checkbox"
-          />
-          <span>
-            Declaro que li e compreendi o termo acima. Confirmo que todas as informações são verdadeiras e concordo com os termos apresentados.
-          </span>
-        </label>
-
-        {/* Use Image for Marketing - Switch Button */}
-        <div style={styles.imageConsentContainer}>
-          <div style={styles.imageConsentLabel}>
-            <span style={styles.imageConsentTitle}>Autorizo o uso da minha imagem</span>
-            <p style={styles.imageConsentDescription}>
-              Autorizo a clínica a utilizar minhas fotos para fins de prontuário médico e divulgação em redes sociais.
-            </p>
-          </div>
-          <label style={styles.switchContainer}>
-            <input
-              type="checkbox"
-              checked={useImageForMarketing}
-              onChange={(e) => setUseImageForMarketing(e.target.checked)}
-              style={styles.switchInput}
-              data-testid="use-image-for-marketing-switch"
-            />
-            <span style={{
-              ...styles.switchTrack,
-              background: useImageForMarketing ? '#16a34a' : '#d1d5db'
-            }}>
-              <span style={{
-                ...styles.switchThumb,
-                transform: useImageForMarketing ? 'translateX(20px)' : 'translateX(0)'
-              }} />
-            </span>
-            <span style={styles.switchText}>{useImageForMarketing ? 'SIM' : 'NÃO'}</span>
-          </label>
-        </div>
-
-        {error && <p style={styles.errorMsg}>{error}</p>}
-
-        <div style={styles.buttonGroup}>
-          <button
-            onClick={() => handleSign(false)}
-            disabled={signing || govBrSigning}
-            style={{
-              ...styles.signButton,
-              opacity: (signing || govBrSigning) ? 0.6 : 1,
-              cursor: (signing || govBrSigning) ? 'not-allowed' : 'pointer'
-            }}
-            data-testid="submit-signature-btn"
-          >
-            {signing && !govBrSigning ? 'Assinando...' : 'Assinar com Desenho'}
-          </button>
-
-          <div style={styles.divider}>
-            <span style={styles.dividerLine}></span>
-            <span style={styles.dividerText}>OU</span>
-            <span style={styles.dividerLine}></span>
-          </div>
-
-          <button
-            onClick={handleGovBrLogin}
-            disabled={signing || govBrSigning}
-            style={{
-              ...styles.govBrButton,
-              opacity: (signing || govBrSigning) ? 0.6 : 1,
-              cursor: (signing || govBrSigning) ? 'not-allowed' : 'pointer'
-            }}
-          >
-            <img 
-              src="https://www.gov.br/++theme++padrao_govbr/img/govbr-logo-large.png" 
-              alt="gov.br" 
-              style={{ height: '20px', marginRight: '10px' }} 
-            />
-            {govBrSigning ? 'Aguardando GOV.BR...' : 'Assinar com GOV.BR'}
-          </button>
-        </div>
+          </>
+        )}
 
         {/* Legal Notice */}
         <div style={styles.legalFooter}>

@@ -1359,94 +1359,66 @@ async def get_admin_stats(current_user: dict = Depends(get_admin_user)):
         "total_products": await db.products.count_documents({})
     }
 
-# ==================== GOV.BR AUTH (POPUP FLOW) ====================
+# ==================== ASSINAFY INTEGRATION ====================
 
-@api_router.get("/auth/govbr/login")
-async def govbr_login(token: str):
+@api_router.post("/webhook/assinafy")
+async def assinafy_webhook(request: Request):
     """
-    Inicia o fluxo de autenticação GOV.BR.
-    Para fins de teste, redireciona para um simulador interno.
+    Recebe notificações da Assinafy sobre o status da assinatura.
     """
-    backend_url = os.environ.get('BACKEND_URL', 'http://localhost:8000')
-    # Se houver um GOVBR_CLIENT_ID real configurado, usa a URL oficial
-    if os.environ.get("GOVBR_CLIENT_ID"):
-        client_id = os.environ.get("GOVBR_CLIENT_ID")
-        redirect_uri = quote(f"{backend_url}/api/auth/govbr/callback")
-        scope = "openid+email+profile+govbr_confiabilidades"
-        govbr_url = (
-            f"https://sso.staging.acesso.gov.br/authorize?"
-            f"response_type=code&"
-            f"client_id={client_id}&"
-            f"scope={scope}&"
-            f"redirect_uri={redirect_uri}&"
-            f"state={token}"
+    data = await request.json()
+    print(f"Webhook Assinafy recebido: {data}")
+    
+    event = data.get("event")
+    document_id = data.get("document", {}).get("id")
+    external_id = data.get("document", {}).get("external_id")
+    
+    if event in ["document.signed", "document.completed"] and external_id:
+        # Atualiza o status do consentimento no banco de dados
+        await db.consents.update_one(
+            {"token": external_id},
+            {"$set": {
+                "status": "signed",
+                "signed_at": datetime.now(timezone.utc).isoformat(),
+                "assinafy_id": document_id
+            }}
         )
-    else:
-        # Modo de Simulação: Abre uma página interna que simula o GOV.BR
-        govbr_url = f"{backend_url}/api/auth/govbr/simulator?state={token}"
-    
-    return {"url": govbr_url}
+        
+    return {"status": "success"}
 
-@api_router.get("/auth/govbr/simulator")
-async def govbr_simulator(state: str):
-    """
-    Página que simula visualmente o login do GOV.BR para testes de UX.
-    """
-    html_content = f"""
-    <html>
-        <head>
-            <title>Simulador GOV.BR - SISTEMACLINICA</title>
-            <style>
-                body {{ font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f0f2f5; }}
-                .card {{ background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; max-width: 400px; }}
-                .logo {{ width: 150px; margin-bottom: 20px; }}
-                .btn {{ background: #004587; color: white; border: none; padding: 12px 24px; border-radius: 25px; font-weight: bold; cursor: pointer; width: 100%; font-size: 16px; }}
-                .btn:hover {{ background: #003566; }}
-                .info {{ color: #666; font-size: 14px; margin-top: 20px; }}
-            </style>
-        </head>
-        <body>
-            <div class="card">
-                <img src="https://www.gov.br/++theme++padrao_govbr/img/govbr-logo-large.png" class="logo" alt="gov.br">
-                <h3>Simulador de Assinatura</h3>
-                <p>Esta é uma tela de teste do SISTEMACLINICA para simular a autorização de assinatura avançada.</p>
-                <button class="btn" onclick="window.location.href='/api/auth/govbr/callback?code=simulado_123&state={state}'">
-                    AUTORIZAR ASSINATURA
-                </button>
-                <div class="info">Em produção, o paciente veria a tela real do Governo Federal.</div>
-            </div>
-        </body>
-    </html>
-    """
-    return HTMLResponse(content=html_content)
+class AssinafyPreparePayload(BaseModel):
+    cpf: str
+    use_image_for_marketing: bool
 
-@api_router.get("/auth/govbr/callback")
-async def govbr_callback(code: str, state: str):
+@api_router.post("/consent/public/{token}/prepare-assinafy")
+async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
     """
-    Callback do GOV.BR. 
-    Recebe o código, troca pelo token e fecha o popup enviando mensagem para a janela pai.
+    Cria o documento na Assinafy e retorna a URL de Embed.
     """
-    # Aqui em produção faríamos o POST para trocar o 'code' pelo 'access_token'
-    # Para fins de demonstração do fluxo de popup, vamos simular o sucesso.
+    consent = await db.consents.find_one({"token": token})
+    if not consent:
+        raise HTTPException(status_code=404, detail="Termo não encontrado")
     
-    html_content = f"""
-    <html>
-        <body>
-            <script>
-                // Envia mensagem para a janela que abriu o popup
-                window.opener.postMessage({{
-                    type: 'GOVBR_SUCCESS',
-                    code: '{code}',
-                    token: '{state}'
-                }}, '*');
-                // Fecha o popup
-                window.close();
-            </script>
-            <p>Autenticação concluída! Fechando janela...</p>
-        </body>
-    </html>
-    """
-    return HTMLResponse(content=html_content)
+    api_key = os.environ.get("ASSINAFY_API_KEY")
+    if not api_key:
+        # Se não houver API Key, retornamos nulo para o frontend usar o fallback
+        return {"embed_url": None}
+
+    # Aqui faríamos a chamada real para a API da Assinafy
+    # POST https://api.assinafy.com.br/v1/documents
+    # Por enquanto, retornamos uma URL simulada da Assinafy
+    
+    # Atualiza o consentimento com a opção de imagem
+    await db.consents.update_one(
+        {"token": token},
+        {"$set": {"use_image_for_marketing": payload.use_image_for_marketing}}
+    )
+    
+    # Simulação de URL de Embed da Assinafy
+    # Em produção, isso viria da resposta da API deles
+    simulated_embed_url = f"https://app.assinafy.com.br/embed/{token}"
+    
+    return {"embed_url": simulated_embed_url}
 
 # ==================== CONSENT ====================
 
