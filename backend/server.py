@@ -1401,24 +1401,60 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
     
     api_key = os.environ.get("ASSINAFY_API_KEY")
     if not api_key:
-        # Se não houver API Key, retornamos nulo para o frontend usar o fallback
         return {"embed_url": None}
 
-    # Aqui faríamos a chamada real para a API da Assinafy
-    # POST https://api.assinafy.com.br/v1/documents
-    # Por enquanto, retornamos uma URL simulada da Assinafy
-    
     # Atualiza o consentimento com a opção de imagem
     await db.consents.update_one(
         {"token": token},
         {"$set": {"use_image_for_marketing": payload.use_image_for_marketing}}
     )
-    
-    # Simulação de URL de Embed da Assinafy
-    # Em produção, isso viria da resposta da API deles
-    simulated_embed_url = f"https://app.assinafy.com.br/embed/{token}"
-    
-    return {"embed_url": simulated_embed_url}
+
+    # Chamada Real para a API da Assinafy
+    try:
+        import requests
+        backend_url = os.environ.get("BACKEND_URL", "http://localhost:8000")
+        
+        # Prepara o documento para a Assinafy
+        # Documentação: https://docs.assinafy.com.br/
+        response = requests.post(
+            "https://api.assinafy.com.br/v1/documents",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={
+                "title": f"Termo de Consentimento - {consent.get('patient_name')}",
+                "content": consent.get("consent_text"),
+                "external_id": token,
+                "webhook_url": f"{backend_url}/api/webhook/assinafy",
+                "signers": [
+                    {
+                        "name": consent.get("patient_name"),
+                        "cpf": payload.cpf,
+                        "role": "signer"
+                    }
+                ],
+                "embed": True # Solicita URL para Iframe
+            },
+            timeout=10
+        )
+        
+        if response.status_code != 201:
+            # Se a API da Assinafy falhar (ex: chave inválida), retornamos erro para o frontend
+            print(f"Erro Assinafy API: {response.text}")
+            return {"embed_url": None, "error": "Erro ao criar documento na Assinafy"}
+
+        res_data = response.json()
+        embed_url = res_data.get("embed_url")
+        
+        # Salva o ID do documento da Assinafy no nosso banco
+        await db.consents.update_one(
+            {"token": token},
+            {"$set": {"assinafy_id": res_data.get("id")}}
+        )
+
+        return {"embed_url": embed_url}
+        
+    except Exception as e:
+        print(f"Erro na integração Assinafy: {str(e)}")
+        return {"embed_url": None}
 
 # ==================== CONSENT ====================
 
