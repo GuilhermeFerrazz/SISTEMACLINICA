@@ -174,20 +174,24 @@ const ConsentSign = () => {
     setSigning(true);
     setError(null);
     try {
-      const signatureImage = canvasRef.current ? canvasRef.current.toDataURL('image/png') : null;
-      await axios.post(`${API}/consent/public/${token}/sign`, {
+      // 1. O sistema envia os dados para o backend
+      // 2. O backend cria o documento na Assinafy e retorna a URL de Embed
+      const { data } = await axios.post(`${API}/consent/public/${token}/prepare-assinafy`, {
         cpf: cpfNums,
-        signature_image: signatureImage,
-        latitude: geolocation?.latitude || null,
-        longitude: geolocation?.longitude || null,
-        accuracy: geolocation?.accuracy || null,
-        user_agent: navigator.userAgent,
-        use_image_for_marketing: useImageForMarketing,
-        is_govbr: false
+        use_image_for_marketing: useImageForMarketing
       });
-      setSuccess(true);
+      
+      if (data.embed_url) {
+        setAssinafyUrl(data.embed_url);
+      } else if (data.error) {
+        setError(`Erro na Assinafy: ${data.error}`);
+      } else {
+        // Fallback para assinatura simples se a API Key não estiver configurada
+        setSuccess(true);
+      }
     } catch (err) {
-      setError(err.response?.data?.detail || 'Erro ao assinar. Tente novamente.');
+      const msg = err.response?.data?.detail || err.response?.data?.error || 'Erro ao preparar assinatura. Tente novamente.';
+      setError(msg);
     } finally {
       setSigning(false);
     }
