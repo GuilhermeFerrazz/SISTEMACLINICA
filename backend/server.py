@@ -1438,8 +1438,14 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
         
         if response.status_code != 201:
             # Se a API da Assinafy falhar (ex: chave inválida), retornamos erro para o frontend
+            error_detail = response.text
+            try:
+                error_json = response.json()
+                error_detail = error_json.get("message") or error_json.get("error") or response.text
+            except:
+                pass
             print(f"Erro Assinafy API: {response.text}")
-            return {"embed_url": None, "error": "Erro ao criar documento na Assinafy"}
+            return {"embed_url": None, "error": f"Assinafy: {error_detail}"}
 
         res_data = response.json()
         embed_url = res_data.get("embed_url")
