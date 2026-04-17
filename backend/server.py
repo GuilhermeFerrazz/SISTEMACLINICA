@@ -1374,14 +1374,41 @@ async def assinafy_webhook(request: Request):
     external_id = data.get("document", {}).get("external_id")
     
     if event in ["document.signed", "document.completed"] and external_id:
-        # Atualiza o status do consentimento no banco de dados
+        # 1. Busca a chave da API
+        api_key = os.environ.get("ASSINAFY_API_KEY")
+        
+        # 2. Tenta baixar o PDF assinado oficial da Assinafy
+        signed_pdf_b64 = None
+        if api_key and document_id:
+            try:
+                # O endpoint de download retorna o PDF binário
+                # Documentação: GET /v1/documents/{id}/download/original (ou similar)
+                # Tentamos baixar a versão final assinada
+                download_res = requests.get(
+                    f"https://api.assinafy.com.br/v1/documents/{document_id}/download/original",
+                    headers={"X-Api-Key": api_key},
+                    timeout=20
+                )
+                if download_res.status_code == 200:
+                    # Converte para Base64 para salvar no MongoDB (como o sistema já faz)
+                    signed_pdf_b64 = base64.b64encode(download_res.content).decode('utf-8')
+                    print(f"PDF assinado baixado com sucesso para o token {external_id}")
+            except Exception as e:
+                print(f"Erro ao baixar PDF assinado da Assinafy: {e}")
+
+        # 3. Atualiza o status e salva o PDF oficial
+        update_data = {
+            "status": "signed",
+            "signed_at": datetime.now(timezone.utc).isoformat(),
+            "assinafy_id": document_id
+        }
+        
+        if signed_pdf_b64:
+            update_data["signed_pdf_base64"] = signed_pdf_b64
+
         await db.consents.update_one(
             {"token": external_id},
-            {"$set": {
-                "status": "signed",
-                "signed_at": datetime.now(timezone.utc).isoformat(),
-                "assinafy_id": document_id
-            }}
+            {"$set": update_data}
         )
         
     return {"status": "success"}
@@ -1510,6 +1537,45 @@ async def get_consent_public(token: str):
     consent = await db.consents.find_one({"token": token}, {"_id": 0})
     if not consent:
         raise HTTPException(status_code=404, detail="Link inválido ou expirado")
+    
+    # Se estiver pendente mas tiver ID da Assinafy, verifica se já foi assinado lá
+    if consent.get("status") != "signed" and consent.get("assinafy_id"):
+        api_key = os.environ.get("ASSINAFY_API_KEY")
+        if api_key:
+            try:
+                # Consulta o status do documento na Assinafy
+                res = requests.get(
+                    f"https://api.assinafy.com.br/v1/documents/{consent['assinafy_id']}",
+                    headers={"X-Api-Key": api_key},
+                    timeout=5
+                )
+                if res.status_code == 200:
+                    doc_data = res.json()
+                    # Se o status for 'signed' ou 'completed', atualizamos localmente
+                    if doc_data.get("status") in ["signed", "completed"]:
+                        # Tenta baixar o PDF também
+                        signed_pdf_b64 = None
+                        download_res = requests.get(
+                            f"https://api.assinafy.com.br/v1/documents/{consent['assinafy_id']}/download/original",
+                            headers={"X-Api-Key": api_key},
+                            timeout=10
+                        )
+                        if download_res.status_code == 200:
+                            signed_pdf_b64 = base64.b64encode(download_res.content).decode('utf-8')
+
+                        update_fields = {
+                            "status": "signed",
+                            "signed_at": datetime.now(timezone.utc).isoformat()
+                        }
+                        if signed_pdf_b64:
+                            update_fields["signed_pdf_base64"] = signed_pdf_b64
+                            
+                        await db.consents.update_one({"token": token}, {"$set": update_fields})
+                        # Atualiza o objeto local para retornar ao frontend
+                        consent.update(update_fields)
+            except Exception as e:
+                print(f"Erro ao verificar status Assinafy em tempo real: {e}")
+
     return consent
 @api_router.post("/consent/public/{token}/sign")
 async def sign_consent_public(token: str, payload: ConsentSignPayload, request: Request):
@@ -1927,6 +1993,17 @@ async def get_consent_pdf(token: str):
         consent = await db.consents.find_one({"token": token}, {"_id": 0})
         if not consent:
             raise HTTPException(status_code=404, detail="Consentimento nao encontrado")
+        
+        # PRIORIDADE: Se houver o PDF assinado oficial da Assinafy salvo, entregamos ele
+        if consent.get("signed_pdf_base64"):
+            pdf_content = base64.b64decode(consent["signed_pdf_base64"])
+            return Response(
+                content=pdf_content,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f"attachment; filename=termo_assinado_{token[:8]}.pdf"}
+            )
+
+        # Caso contrário, gera o PDF interno (assinatura simples ou sem assinatura)
         settings = await db.settings.find_one({"type": "clinic"}, {"_id": 0}) or {}
         buf = await build_consent_pdf(consent, settings)
         return StreamingResponse(

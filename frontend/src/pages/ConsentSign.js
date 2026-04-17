@@ -26,9 +26,20 @@ const ConsentSign = () => {
     fetchConsentData();
     requestGeolocation();
 
-    // Assinafy Embed Listener (Futuro)
+    // Assinafy Embed Listener
     const handleAssinafyMessage = (event) => {
-      // Lógica de recebimento de confirmação da Assinafy
+      // A Assinafy envia mensagens via postMessage quando eventos ocorrem no iframe
+      // Documentação sugere verificar event.data
+      console.log('Mensagem recebida do Iframe:', event.data);
+      
+      // Verificamos se a mensagem indica conclusão
+      if (event.data === 'document.signed' || 
+          event.data === 'document.completed' || 
+          (event.data && event.data.event === 'document.signed')) {
+        setSuccess(true);
+        // Recarrega os dados para pegar o signed_at atualizado
+        setTimeout(fetchConsentData, 2000);
+      }
     };
     window.addEventListener('message', handleAssinafyMessage);
     return () => window.removeEventListener('message', handleAssinafyMessage);
