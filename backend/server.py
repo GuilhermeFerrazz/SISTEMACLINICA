@@ -1529,10 +1529,22 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
 
         # 3. Criar o Signer na Assinafy
         # A API exige que o signer seja criado previamente e seu ID seja usado no assignment.
+        # Buscamos o e-mail do paciente no banco de dados para incluir no payload.
+        patient_email = None
+        if consent.get("patient_id"):
+            patient_doc = await db.patients.find_one({"id": consent["patient_id"]})
+            if patient_doc:
+                patient_email = patient_doc.get("email")
+        
         # Endpoint: POST /v1/accounts/{account_id}/signers
         signer_payload = {
             "full_name": consent.get("patient_name", "Paciente")
         }
+        if patient_email:
+            signer_payload["email"] = patient_email
+            print(f"[DEBUG ASSINAFY] Usando e-mail do paciente: {patient_email}")
+        else:
+            print("[DEBUG ASSINAFY] E-mail do paciente não encontrado no banco de dados.")
         signer_url = f"https://api.assinafy.com.br/v1/accounts/{account_id}/signers"
         print(f"[DEBUG ASSINAFY] Criando signer em: {signer_url}")
         
