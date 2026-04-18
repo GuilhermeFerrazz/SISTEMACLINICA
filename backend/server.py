@@ -1430,12 +1430,19 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
         return {"embed_url": None, "error": "Termo de consentimento não encontrado no sistema."}
     
     api_key = os.environ.get("ASSINAFY_API_KEY")
+    account_id = os.environ.get("ASSINAFY_ACCOUNT_ID")
+    
     if not api_key:
         print("[DEBUG ASSINAFY] ASSINAFY_API_KEY não configurada no Railway.")
         return {"embed_url": None, "error": "Chave de API da Assinafy não configurada no servidor (Railway)."}
+    
+    if not account_id:
+        print("[DEBUG ASSINAFY] ASSINAFY_ACCOUNT_ID não configurado no Railway.")
+        return {"embed_url": None, "error": "ID da Conta (Workspace ID) da Assinafy não configurado no servidor (Railway)."}
 
-    # Limpa a chave de possíveis espaços em branco
+    # Limpa a chave e o ID de possíveis espaços em branco
     api_key = api_key.strip()
+    account_id = account_id.strip()
 
     # Atualiza o consentimento com a opção de imagem
     await db.consents.update_one(
@@ -1451,31 +1458,23 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
         backend_url = os.environ.get("BACKEND_URL", "https://app.drguilhermeferraz.com")
         
         # 1. Gerar um PDF temporário
-        # Usamos fpdf2 (importado como FPDF) que é mais robusto
         pdf = FPDF()
         pdf.add_page()
-        # Adiciona uma fonte padrão que suporte UTF-8 ou usa a padrão latin-1
         pdf.set_font("helvetica", size=12)
-        
-        # O texto do termo pode conter caracteres especiais, o fpdf2 lida melhor com isso
         pdf.multi_cell(0, 10, consent.get("consent_text", ""))
         
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
             pdf.output(tmp.name)
             tmp_path = tmp.name
 
-        # 2. Upload do Documento
-        headers = {"Authorization": f"Bearer {api_key}", "X-Api-Key": api_key}
+        # 2. Upload do Documento (URL correta com account_id)
+        headers = {"X-Api-Key": api_key}
+        url = f"https://api.assinafy.com.br/v1/accounts/{account_id}/documents"
         
-        print(f"[DEBUG ASSINAFY] Fazendo upload do PDF: {tmp_path}")
+        print(f"[DEBUG ASSINAFY] Fazendo upload do PDF para {url}")
         with open(tmp_path, "rb") as f:
             files = {"file": (f"Termo_{token}.pdf", f, "application/pdf")}
-            response = requests.post(
-                "https://api.assinafy.com.br/v1/documents",
-                headers=headers,
-                files=files,
-                timeout=25
-            )
+            response = requests.post(url, headers=headers, files=files, timeout=25)
 
         # Limpa o arquivo temporário
         import os as native_os
@@ -1492,7 +1491,7 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
         if not doc_id:
             return {"embed_url": None, "error": "Assinafy não retornou um ID de documento após o upload."}
 
-        # 3. Criar o Assignment
+        # 3. Criar o Pedido de Assinatura (Assignment)
         assignment_payload = {
             "method": "virtual",
             "signers": [
@@ -1506,9 +1505,11 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
             "webhook_url": f"{backend_url}/api/webhook/assinafy"
         }
         
-        print(f"[DEBUG ASSINAFY] Criando Assignment para doc_id: {doc_id}")
+        assign_url = f"https://api.assinafy.com.br/v1/accounts/{account_id}/documents/{doc_id}/assignments"
+        print(f"[DEBUG ASSINAFY] Criando Assignment em {assign_url}")
+        
         assignment_res = requests.post(
-            f"https://api.assinafy.com.br/v1/documents/{doc_id}/assignments",
+            assign_url,
             headers={**headers, "Content-Type": "application/json"},
             json=assignment_payload,
             timeout=20
