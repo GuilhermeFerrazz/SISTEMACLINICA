@@ -1498,6 +1498,8 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
             return {"embed_url": None, "error": f"Assinafy: ID do documento não encontrado na resposta: {str(doc_data)[:100]}"}
 
         # 3. Criar o Pedido de Assinatura (Assignment)
+        # De acordo com a documentação oficial da Assinafy, o endpoint de assignment pode ser /v1/documents/{doc_id}/assignments
+        # ou /v1/accounts/{account_id}/documents/{doc_id}/assignments. Vamos tentar a rota completa com account_id.
         assignment_payload = {
             "method": "virtual",
             "signers": [
@@ -1511,6 +1513,7 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
             "webhook_url": f"{backend_url}/api/webhook/assinafy"
         }
         
+        # A URL correta conforme a documentação é /v1/accounts/{account_id}/documents/{doc_id}/assignments
         assign_url = f"https://api.assinafy.com.br/v1/accounts/{account_id}/documents/{doc_id}/assignments"
         print(f"[DEBUG ASSINAFY] Criando Assignment em {assign_url}")
         
