@@ -1451,12 +1451,14 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
         backend_url = os.environ.get("BACKEND_URL", "https://app.drguilhermeferraz.com")
         
         # 1. Gerar um PDF temporário
+        # Usamos fpdf2 (importado como FPDF) que é mais robusto
         pdf = FPDF()
         pdf.add_page()
-        pdf.set_font("Arial", size=12)
-        # Sanitiza o texto para evitar erros na FPDF
-        clean_text = consent.get("consent_text", "").encode('latin-1', 'replace').decode('latin-1')
-        pdf.multi_cell(0, 10, clean_text)
+        # Adiciona uma fonte padrão que suporte UTF-8 ou usa a padrão latin-1
+        pdf.set_font("helvetica", size=12)
+        
+        # O texto do termo pode conter caracteres especiais, o fpdf2 lida melhor com isso
+        pdf.multi_cell(0, 10, consent.get("consent_text", ""))
         
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
             pdf.output(tmp.name)
