@@ -1391,7 +1391,11 @@ async def _check_and_update_assinafy_status(consent: dict):
                 doc_data = doc_data["data"]
             
             # Se o status for 'signed' ou 'completed', atualizamos localmente
-            if doc_data.get("status") in ["signed", "completed"]:
+            # Alguns endpoints podem retornar 'status' dentro de 'data' ou direto na raiz
+            current_status = doc_data.get("status")
+            print(f"[DEBUG ASSINAFY] Status atual do doc {consent['assinafy_id']}: {current_status}")
+            
+            if current_status in ["signed", "completed"]:
                 print(f"[DEBUG ASSINAFY] Documento {consent['assinafy_id']} assinado! Baixando PDF...")
                 
                 # 2. Tenta baixar o PDF assinado (usamos /download/signed para pegar a versão com as assinaturas)
@@ -1411,8 +1415,20 @@ async def _check_and_update_assinafy_status(consent: dict):
                 if signed_pdf_b64:
                     update_fields["signed_pdf_base64"] = signed_pdf_b64
                 
-                # 3. Atualiza no MongoDB
+                # 3. Atualiza no MongoDB (Termo de Consentimento)
                 await db.consents.update_one({"token": consent["token"]}, {"$set": update_fields})
+                
+                # 4. Atualiza o status global do paciente se necessário
+                if consent.get("patient_id"):
+                    await db.patients.update_one(
+                        {"id": consent["patient_id"]}, 
+                        {"$set": {
+                            "consent_signed": True,
+                            "consent_date": update_fields["signed_at"],
+                            "consent_procedure_name": consent.get("procedure_name")
+                        }}
+                    )
+                
                 consent.update(update_fields)
                 print(f"[DEBUG ASSINAFY] Status atualizado para 'signed' para o token {consent['token']}")
                 
@@ -1749,12 +1765,14 @@ async def sign_consent_public(token: str, payload: ConsentSignPayload, request: 
 
 @api_router.get("/consent/pending/{patient_id}")
 async def get_pending_consent(patient_id: str, current_user: dict = Depends(get_current_user)):
+    print(f"[DEBUG ASSINAFY] Buscando termos para paciente: {patient_id}")
     consents = await db.consents.find({"patient_id": patient_id}, {"_id": 0}).to_list(100)
     
     # Para cada consentimento pendente que tem um ID da Assinafy, verifica o status atual
     updated_consents = []
     for c in consents:
         if c.get("status") != "signed" and c.get("assinafy_id"):
+            print(f"[DEBUG ASSINAFY] Verificando status pendente para token: {c.get('token')}")
             updated_c = await _check_and_update_assinafy_status(c)
             updated_consents.append(updated_c)
         else:
