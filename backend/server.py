@@ -1692,21 +1692,22 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
         # Resposta: { "signing_urls": [ { "signer_id": "...", "url": "..." } ] }
         embed_url = None
         
-        # Caminho 1: signing_urls[0].url (estrutura oficial)
-        signing_urls = assign_data.get("signing_urls", [])
-        if signing_urls:
+        # 1. Tenta buscar na raiz ou dentro de 'data'
+        data_obj = assign_data.get("data") if isinstance(assign_data.get("data"), dict) else assign_data
+        
+        # Caminho A: signing_urls[0].url (Padrão oficial)
+        signing_urls = data_obj.get("signing_urls", [])
+        if signing_urls and isinstance(signing_urls, list):
             embed_url = signing_urls[0].get("url")
         
-        # Caminho 2: dentro de 'data' (caso a resposta venha encapsulada)
+        # Caminho B: sign_url direto no objeto (Alguns endpoints de collect)
         if not embed_url:
-            signing_urls = assign_data.get("data", {}).get("signing_urls", [])
-            if signing_urls:
-                embed_url = signing_urls[0].get("url")
-
-        # Caminho 3: sign_url legado (fallback)
+            embed_url = data_obj.get("sign_url") or data_obj.get("url")
+            
+        # Caminho C: dentro da lista de signers
         if not embed_url:
-            signers_resp = assign_data.get("signers", []) or assign_data.get("data", {}).get("signers", [])
-            if signers_resp:
+            signers_resp = data_obj.get("signers", [])
+            if signers_resp and isinstance(signers_resp, list):
                 embed_url = signers_resp[0].get("sign_url") or signers_resp[0].get("url")
 
         if not embed_url:
@@ -1714,6 +1715,8 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
             return {"embed_url": None, "error": "Assinafy criou o documento, mas não retornou o link de assinatura."}
 
         # IMPORTANTE: Para permitir o EMBED em iframe, a Assinafy exige o parâmetro ?embed=true na URL
+        # Removemos possíveis espaços e garantimos o parâmetro
+        embed_url = embed_url.strip()
         if "?" in embed_url:
             embed_url += "&embed=true"
         else:
