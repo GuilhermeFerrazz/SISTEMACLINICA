@@ -1498,8 +1498,7 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
             return {"embed_url": None, "error": f"Assinafy: ID do documento não encontrado na resposta: {str(doc_data)[:100]}"}
 
         # 3. Criar o Pedido de Assinatura (Assignment)
-        # De acordo com a documentação oficial da Assinafy, o endpoint de assignment pode ser /v1/documents/{doc_id}/assignments
-        # ou /v1/accounts/{account_id}/documents/{doc_id}/assignments. Vamos tentar a rota completa com account_id.
+        # Tentamos a rota direta que é o padrão mais comum em APIs modernas (o ID da conta já vem na API Key)
         assignment_payload = {
             "method": "virtual",
             "signers": [
@@ -1513,9 +1512,9 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
             "webhook_url": f"{backend_url}/api/webhook/assinafy"
         }
         
-        # A URL correta conforme a documentação é /v1/accounts/{account_id}/documents/{doc_id}/assignments
-        assign_url = f"https://api.assinafy.com.br/v1/accounts/{account_id}/documents/{doc_id}/assignments"
-        print(f"[DEBUG ASSINAFY] Criando Assignment em {assign_url}")
+        # Tentamos primeiro a rota direta /v1/documents/{doc_id}/assignments
+        assign_url = f"https://api.assinafy.com.br/v1/documents/{doc_id}/assignments"
+        print(f"[DEBUG ASSINAFY] Tentando criar Assignment em: {assign_url}")
         
         assignment_res = requests.post(
             assign_url,
@@ -1523,6 +1522,17 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
             json=assignment_payload,
             timeout=20
         )
+        
+        # Se falhar com 404, tentamos a rota com account_id (Fallback)
+        if assignment_res.status_code == 404:
+            assign_url_alt = f"https://api.assinafy.com.br/v1/accounts/{account_id}/documents/{doc_id}/assignments"
+            print(f"[DEBUG ASSINAFY] 404 na primeira tentativa. Tentando fallback em: {assign_url_alt}")
+            assignment_res = requests.post(
+                assign_url_alt,
+                headers={**headers, "Content-Type": "application/json"},
+                json=assignment_payload,
+                timeout=20
+            )
 
         print(f"[DEBUG ASSINAFY] Resposta Assignment ({assignment_res.status_code}): {assignment_res.text}")
         
