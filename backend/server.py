@@ -1497,24 +1497,49 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
             print(f"[DEBUG ASSINAFY] ID não encontrado na resposta: {doc_data}")
             return {"embed_url": None, "error": f"Assinafy: ID do documento não encontrado na resposta: {str(doc_data)[:100]}"}
 
-        # 3. Criar o Pedido de Assinatura (Assignment)
-        # Tentamos a rota direta que é o padrão mais comum em APIs modernas (o ID da conta já vem na API Key)
+        # 3. Criar o Signer na Assinafy
+        # A API exige que o signer seja criado previamente e seu ID seja usado no assignment.
+        # Endpoint: POST /v1/accounts/{account_id}/signers
+        signer_payload = {
+            "full_name": consent.get("patient_name", "Paciente")
+        }
+        signer_url = f"https://api.assinafy.com.br/v1/accounts/{account_id}/signers"
+        print(f"[DEBUG ASSINAFY] Criando signer em: {signer_url}")
+        
+        signer_res = requests.post(
+            signer_url,
+            headers={**headers, "Content-Type": "application/json"},
+            json=signer_payload,
+            timeout=20
+        )
+        print(f"[DEBUG ASSINAFY] Resposta Signer ({signer_res.status_code}): {signer_res.text}")
+        
+        if signer_res.status_code not in [200, 201]:
+            return {"embed_url": None, "error": f"Assinafy Signer Error ({signer_res.status_code}): {signer_res.text[:150]}"}
+        
+        signer_data = signer_res.json()
+        # A resposta vem dentro de 'data' conforme documentação
+        signer_id = signer_data.get("data", {}).get("id") or signer_data.get("id")
+        if not signer_id:
+            print(f"[DEBUG ASSINAFY] ID do signer não encontrado: {signer_data}")
+            return {"embed_url": None, "error": f"Assinafy: ID do signer não encontrado na resposta: {str(signer_data)[:100]}"}
+        
+        print(f"[DEBUG ASSINAFY] Signer criado com ID: {signer_id}")
+
+        # 4. Criar o Pedido de Assinatura (Assignment)
+        # Endpoint correto: POST /v1/documents/{doc_id}/assignments
+        # O signer é referenciado pelo ID criado no passo anterior.
         assignment_payload = {
             "method": "virtual",
             "signers": [
                 {
-                    "full_name": consent.get("patient_name", "Paciente"),
-                    "government_id": payload.cpf,
-                    "role": "signer"
+                    "id": signer_id
                 }
-            ],
-            "external_id": token,
-            "webhook_url": f"{backend_url}/api/webhook/assinafy"
+            ]
         }
         
-        # Tentamos primeiro a rota direta /v1/documents/{doc_id}/assignments
         assign_url = f"https://api.assinafy.com.br/v1/documents/{doc_id}/assignments"
-        print(f"[DEBUG ASSINAFY] Tentando criar Assignment em: {assign_url}")
+        print(f"[DEBUG ASSINAFY] Criando Assignment em: {assign_url}")
         
         assignment_res = requests.post(
             assign_url,
@@ -1522,37 +1547,34 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
             json=assignment_payload,
             timeout=20
         )
-        
-        # Se falhar com 404, tentamos a rota com account_id (Fallback)
-        if assignment_res.status_code == 404:
-            assign_url_alt = f"https://api.assinafy.com.br/v1/accounts/{account_id}/documents/{doc_id}/assignments"
-            print(f"[DEBUG ASSINAFY] 404 na primeira tentativa. Tentando fallback em: {assign_url_alt}")
-            assignment_res = requests.post(
-                assign_url_alt,
-                headers={**headers, "Content-Type": "application/json"},
-                json=assignment_payload,
-                timeout=20
-            )
 
         print(f"[DEBUG ASSINAFY] Resposta Assignment ({assignment_res.status_code}): {assignment_res.text}")
         
         if assignment_res.status_code not in [200, 201]:
-            return {"embed_url": None, "error": f"Assinafy Assignment Error ({assignment_res.status_code}): {assignment_res.text[:150]}"}
+            return {"embed_url": None, "error": f"Assinafy Assignment Error ({assignment_res.status_code}): {assignment_res.text[:200]}"}
 
         assign_data = assignment_res.json()
         
-        # Busca a URL de assinatura (sign_url ou embed_url)
-        # A estrutura da Assinafy pode variar, tentamos os caminhos comuns
+        # Busca a URL de assinatura no campo signing_urls (estrutura oficial da API Assinafy)
+        # Resposta: { "signing_urls": [ { "signer_id": "...", "url": "..." } ] }
         embed_url = None
         
-        # Caminho 1: data.signers[0].sign_url
-        signers = assign_data.get("data", {}).get("signers", [])
-        if signers:
-            embed_url = signers[0].get("sign_url")
-            
-        # Caminho 2: signers[0].sign_url (raiz)
-        if not embed_url and assign_data.get("signers"):
-            embed_url = assign_data.get("signers")[0].get("sign_url")
+        # Caminho 1: signing_urls[0].url (estrutura oficial)
+        signing_urls = assign_data.get("signing_urls", [])
+        if signing_urls:
+            embed_url = signing_urls[0].get("url")
+        
+        # Caminho 2: dentro de 'data' (caso a resposta venha encapsulada)
+        if not embed_url:
+            signing_urls = assign_data.get("data", {}).get("signing_urls", [])
+            if signing_urls:
+                embed_url = signing_urls[0].get("url")
+
+        # Caminho 3: sign_url legado (fallback)
+        if not embed_url:
+            signers_resp = assign_data.get("signers", []) or assign_data.get("data", {}).get("signers", [])
+            if signers_resp:
+                embed_url = signers_resp[0].get("sign_url") or signers_resp[0].get("url")
 
         if not embed_url:
             print(f"[DEBUG ASSINAFY] URL de assinatura não encontrada no JSON: {assign_data}")
