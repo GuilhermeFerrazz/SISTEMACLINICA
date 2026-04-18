@@ -1556,17 +1556,31 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
         )
         print(f"[DEBUG ASSINAFY] Resposta Signer ({signer_res.status_code}): {signer_res.text}")
         
-        if signer_res.status_code not in [200, 201]:
-            return {"embed_url": None, "error": f"Assinafy Signer Error ({signer_res.status_code}): {signer_res.text[:150]}"}
+        signer_id = None
+        if signer_res.status_code in [200, 201]:
+            signer_data = signer_res.json()
+            signer_id = signer_data.get("data", {}).get("id") or signer_data.get("id")
+        elif signer_res.status_code == 400 and "já existe" in signer_res.text:
+            # Se o signatário já existe, precisamos buscar o ID dele
+            print("[DEBUG ASSINAFY] Signatário já existe. Buscando ID existente...")
+            search_url = f"https://api.assinafy.com.br/v1/accounts/{account_id}/signers?search={patient_email}"
+            search_res = requests.get(search_url, headers=headers, timeout=20)
+            if search_res.status_code == 200:
+                search_data = search_res.json()
+                signers_list = search_data.get("data", [])
+                if signers_list:
+                    # Filtra pelo e-mail exato para garantir
+                    for s in signers_list:
+                        if s.get("email") == patient_email:
+                            signer_id = s.get("id")
+                            print(f"[DEBUG ASSINAFY] ID encontrado para signatário existente: {signer_id}")
+                            break
         
-        signer_data = signer_res.json()
-        # A resposta vem dentro de 'data' conforme documentação
-        signer_id = signer_data.get("data", {}).get("id") or signer_data.get("id")
         if not signer_id:
-            print(f"[DEBUG ASSINAFY] ID do signer não encontrado: {signer_data}")
-            return {"embed_url": None, "error": f"Assinafy: ID do signer não encontrado na resposta: {str(signer_data)[:100]}"}
+            print(f"[DEBUG ASSINAFY] Falha ao obter ID do signer. Resposta original: {signer_res.text}")
+            return {"embed_url": None, "error": f"Assinafy Signer Error: Não foi possível criar ou localizar o signatário ({signer_res.status_code})."}
         
-        print(f"[DEBUG ASSINAFY] Signer criado com ID: {signer_id}")
+        print(f"[DEBUG ASSINAFY] Signer pronto para uso (ID: {signer_id})")
 
         # 4. Criar o Pedido de Assinatura (Assignment)
         # Endpoint correto: POST /v1/documents/{doc_id}/assignments
