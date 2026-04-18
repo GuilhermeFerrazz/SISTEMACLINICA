@@ -1361,6 +1361,66 @@ async def get_admin_stats(current_user: dict = Depends(get_admin_user)):
 
 # ==================== ASSINAFY INTEGRATION ====================
 
+async def _check_and_update_assinafy_status(consent: dict):
+    """
+    Verifica o status de um documento na Assinafy e atualiza o banco de dados se necessário.
+    """
+    if consent.get("status") == "signed" or not consent.get("assinafy_id"):
+        return consent
+
+    api_key = os.environ.get("ASSINAFY_API_KEY")
+    if not api_key:
+        return consent
+
+    try:
+        import requests
+        import base64
+        from datetime import datetime, timezone
+        
+        # 1. Consulta o status do documento na Assinafy
+        res = requests.get(
+            f"https://api.assinafy.com.br/v1/documents/{consent['assinafy_id']}",
+            headers={"X-Api-Key": api_key},
+            timeout=10
+        )
+        
+        if res.status_code == 200:
+            doc_data = res.json()
+            # A resposta pode vir encapsulada em 'data'
+            if doc_data.get("data"):
+                doc_data = doc_data["data"]
+            
+            # Se o status for 'signed' ou 'completed', atualizamos localmente
+            if doc_data.get("status") in ["signed", "completed"]:
+                print(f"[DEBUG ASSINAFY] Documento {consent['assinafy_id']} assinado! Baixando PDF...")
+                
+                # 2. Tenta baixar o PDF assinado (usamos /download/signed para pegar a versão com as assinaturas)
+                signed_pdf_b64 = None
+                download_res = requests.get(
+                    f"https://api.assinafy.com.br/v1/documents/{consent['assinafy_id']}/download/signed",
+                    headers={"X-Api-Key": api_key},
+                    timeout=15
+                )
+                if download_res.status_code == 200:
+                    signed_pdf_b64 = base64.b64encode(download_res.content).decode('utf-8')
+                
+                update_fields = {
+                    "status": "signed",
+                    "signed_at": datetime.now(timezone.utc).isoformat()
+                }
+                if signed_pdf_b64:
+                    update_fields["signed_pdf_base64"] = signed_pdf_b64
+                
+                # 3. Atualiza no MongoDB
+                await db.consents.update_one({"token": consent["token"]}, {"$set": update_fields})
+                consent.update(update_fields)
+                print(f"[DEBUG ASSINAFY] Status atualizado para 'signed' para o token {consent['token']}")
+                
+    except Exception as e:
+        print(f"[DEBUG ASSINAFY] Erro ao verificar status em tempo real: {e}")
+    
+    return consent
+
 @api_router.post("/webhook/assinafy")
 async def assinafy_webhook(request: Request):
     """
@@ -1658,41 +1718,7 @@ async def get_consent_public(token: str):
     
     # Se estiver pendente mas tiver ID da Assinafy, verifica se já foi assinado lá
     if consent.get("status") != "signed" and consent.get("assinafy_id"):
-        api_key = os.environ.get("ASSINAFY_API_KEY")
-        if api_key:
-            try:
-                # Consulta o status do documento na Assinafy
-                res = requests.get(
-                    f"https://api.assinafy.com.br/v1/documents/{consent['assinafy_id']}",
-                    headers={"X-Api-Key": api_key},
-                    timeout=5
-                )
-                if res.status_code == 200:
-                    doc_data = res.json()
-                    # Se o status for 'signed' ou 'completed', atualizamos localmente
-                    if doc_data.get("status") in ["signed", "completed"]:
-                        # Tenta baixar o PDF também
-                        signed_pdf_b64 = None
-                        download_res = requests.get(
-                            f"https://api.assinafy.com.br/v1/documents/{consent['assinafy_id']}/download/original",
-                            headers={"X-Api-Key": api_key},
-                            timeout=10
-                        )
-                        if download_res.status_code == 200:
-                            signed_pdf_b64 = base64.b64encode(download_res.content).decode('utf-8')
-
-                        update_fields = {
-                            "status": "signed",
-                            "signed_at": datetime.now(timezone.utc).isoformat()
-                        }
-                        if signed_pdf_b64:
-                            update_fields["signed_pdf_base64"] = signed_pdf_b64
-                            
-                        await db.consents.update_one({"token": token}, {"$set": update_fields})
-                        # Atualiza o objeto local para retornar ao frontend
-                        consent.update(update_fields)
-            except Exception as e:
-                print(f"Erro ao verificar status Assinafy em tempo real: {e}")
+        consent = await _check_and_update_assinafy_status(consent)
 
     return consent
 @api_router.post("/consent/public/{token}/sign")
@@ -1723,7 +1749,18 @@ async def sign_consent_public(token: str, payload: ConsentSignPayload, request: 
 
 @api_router.get("/consent/pending/{patient_id}")
 async def get_pending_consent(patient_id: str, current_user: dict = Depends(get_current_user)):
-    return await db.consents.find({"patient_id": patient_id}, {"_id": 0}).to_list(100)
+    consents = await db.consents.find({"patient_id": patient_id}, {"_id": 0}).to_list(100)
+    
+    # Para cada consentimento pendente que tem um ID da Assinafy, verifica o status atual
+    updated_consents = []
+    for c in consents:
+        if c.get("status") != "signed" and c.get("assinafy_id"):
+            updated_c = await _check_and_update_assinafy_status(c)
+            updated_consents.append(updated_c)
+        else:
+            updated_consents.append(c)
+            
+    return updated_consents
 
 @api_router.post("/consent/generate-link")
 async def generate_consent_link(payload: ConsentLinkCreate, current_user: dict = Depends(get_current_user)):
