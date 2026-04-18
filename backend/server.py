@@ -1456,28 +1456,37 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
             tmp_path = tmp.name
 
         # 2. Upload do Documento para a Assinafy
-        # Nota: Muitas APIs usam Authorization: Bearer <key> ou X-Api-Key
-        # Vou usar o padrão Bearer que é mais comum em APIs modernas se o X-Api-Key falhar
-        headers = {"Authorization": f"Bearer {api_key}"}
+        # Tentamos com os dois cabeçalhos mais comuns para garantir compatibilidade
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "X-Api-Key": api_key
+        }
         
-        print(f"[DEBUG ASSINAFY] Iniciando upload para o token {token} com Bearer token")
-        with open(tmp_path, "rb") as f:
-            files = {"file": (f"Termo_{token}.pdf", f, "application/pdf")}
-            response = requests.post(
-                "https://api.assinafy.com.br/v1/documents",
-                headers=headers,
-                files=files,
-                timeout=15
-            )
+        print(f"[DEBUG ASSINAFY] Iniciando upload para o token {token}")
+        try:
+            with open(tmp_path, "rb") as f:
+                files = {"file": (f"Termo_{token}.pdf", f, "application/pdf")}
+                response = requests.post(
+                    "https://api.assinafy.com.br/v1/documents",
+                    headers=headers,
+                    files=files,
+                    timeout=20
+                )
+        except Exception as upload_err:
+            print(f"[DEBUG ASSINAFY] Erro de conexão no Upload: {upload_err}")
+            return {"embed_url": None, "error": f"Erro de conexão: {str(upload_err)}"}
 
         print(f"[DEBUG ASSINAFY] Status Upload: {response.status_code}")
         # Limpa o arquivo temporário
         import os as native_os
-        native_os.unlink(tmp_path)
+        if native_os.path.exists(tmp_path):
+            native_os.unlink(tmp_path)
         
         if response.status_code not in [200, 201]:
             print(f"[DEBUG ASSINAFY] Erro no Upload: {response.text}")
-            return {"embed_url": None, "error": f"Assinafy (Upload): {response.status_code} - {response.text}"}
+            # Salva o erro no banco para diagnóstico remoto
+            await db.consents.update_one({"token": token}, {"$set": {"last_api_error": response.text}})
+            return {"embed_url": None, "error": f"Assinafy (Upload {response.status_code}): {response.text[:100]}"}
 
         doc_data = response.json()
         doc_id = doc_data.get("id")
@@ -1497,19 +1506,23 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
             "external_id": token,
             "webhook_url": f"{backend_url}/api/webhook/assinafy"
         }
-        print(f"[DEBUG ASSINAFY] Payload Assignment: {json.dumps(assignment_payload)}")
         
         assignment_res = requests.post(
             f"https://api.assinafy.com.br/v1/documents/{doc_id}/assignments",
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "X-Api-Key": api_key,
+                "Content-Type": "application/json"
+            },
             json=assignment_payload,
-            timeout=10
+            timeout=15
         )
 
         print(f"[DEBUG ASSINAFY] Status Assignment: {assignment_res.status_code}")
         if assignment_res.status_code not in [200, 201]:
             print(f"[DEBUG ASSINAFY] Erro no Assignment: {assignment_res.text}")
-            return {"embed_url": None, "error": f"Assinafy (Assignment): {assignment_res.status_code} - {assignment_res.text}"}
+            await db.consents.update_one({"token": token}, {"$set": {"last_api_error": assignment_res.text}})
+            return {"embed_url": None, "error": f"Assinafy (Assignment {assignment_res.status_code}): {assignment_res.text[:100]}"}
 
         assign_data = assignment_res.json()
         # Na Assinafy, a URL de assinatura individual fica dentro de cada signatário ou no retorno
