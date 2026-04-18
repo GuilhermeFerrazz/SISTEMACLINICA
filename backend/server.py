@@ -1487,9 +1487,15 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
             return {"embed_url": None, "error": f"Assinafy Upload Error ({response.status_code}): {response.text[:150]}"}
 
         doc_data = response.json()
-        doc_id = doc_data.get("id")
+        
+        # A Assinafy pode retornar o ID em diferentes campos ou dentro de um objeto 'data'
+        doc_id = doc_data.get("id") or doc_data.get("document_id")
+        if not doc_id and doc_data.get("data"):
+            doc_id = doc_data.get("data", {}).get("id") or doc_data.get("data", {}).get("document_id")
+            
         if not doc_id:
-            return {"embed_url": None, "error": "Assinafy não retornou um ID de documento após o upload."}
+            print(f"[DEBUG ASSINAFY] ID não encontrado na resposta: {doc_data}")
+            return {"embed_url": None, "error": f"Assinafy: ID do documento não encontrado na resposta: {str(doc_data)[:100]}"}
 
         # 3. Criar o Pedido de Assinatura (Assignment)
         assignment_payload = {
