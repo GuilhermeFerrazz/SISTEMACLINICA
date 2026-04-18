@@ -1456,13 +1456,11 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
             tmp_path = tmp.name
 
         # 2. Upload do Documento para a Assinafy
-        # Nota: O endpoint de upload não usa Content-Type: application/json
         headers = {"X-Api-Key": api_key}
         
+        print(f"[DEBUG ASSINAFY] Iniciando upload para o token {token}")
         with open(tmp_path, "rb") as f:
             files = {"file": (f"Termo_{token}.pdf", f, "application/pdf")}
-            # A URL de upload na doc é POST /v1/documents (multipart/form-data)
-            # Nota: A doc menciona /accounts/{id}/documents mas também /v1/documents
             response = requests.post(
                 "https://api.assinafy.com.br/v1/documents",
                 headers=headers,
@@ -1470,40 +1468,46 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
                 timeout=15
             )
 
+        print(f"[DEBUG ASSINAFY] Status Upload: {response.status_code}")
         # Limpa o arquivo temporário
         import os as native_os
         native_os.unlink(tmp_path)
         
         if response.status_code not in [200, 201]:
-            print(f"Erro Upload Assinafy: {response.text}")
-            return {"embed_url": None, "error": f"Assinafy (Upload): {response.status_code}"}
+            print(f"[DEBUG ASSINAFY] Erro no Upload: {response.text}")
+            return {"embed_url": None, "error": f"Assinafy (Upload): {response.status_code} - {response.text}"}
 
         doc_data = response.json()
         doc_id = doc_data.get("id")
+        print(f"[DEBUG ASSINAFY] Documento criado com ID: {doc_id}")
 
         # 3. Criar o Pedido de Assinatura (Assignment) para obter a URL de Embed
-        # POST /v1/documents/{docId}/assignments
+        print(f"[DEBUG ASSINAFY] Criando Assignment para doc_id {doc_id}")
+        assignment_payload = {
+            "method": "virtual",
+            "signers": [
+                {
+                    "full_name": consent.get("patient_name"),
+                    "government_id": payload.cpf,
+                    "role": "signer"
+                }
+            ],
+            "external_id": token,
+            "webhook_url": f"{backend_url}/api/webhook/assinafy"
+        }
+        print(f"[DEBUG ASSINAFY] Payload Assignment: {json.dumps(assignment_payload)}")
+        
         assignment_res = requests.post(
             f"https://api.assinafy.com.br/v1/documents/{doc_id}/assignments",
             headers={"X-Api-Key": api_key, "Content-Type": "application/json"},
-            json={
-                "method": "virtual",
-                "signers": [
-                    {
-                        "full_name": consent.get("patient_name"),
-                        "government_id": payload.cpf, # CPF na Assinafy é government_id
-                        "role": "signer"
-                    }
-                ],
-                "external_id": token,
-                "webhook_url": f"{backend_url}/api/webhook/assinafy"
-            },
+            json=assignment_payload,
             timeout=10
         )
 
+        print(f"[DEBUG ASSINAFY] Status Assignment: {assignment_res.status_code}")
         if assignment_res.status_code not in [200, 201]:
-            print(f"Erro Assignment Assinafy: {assignment_res.text}")
-            return {"embed_url": None, "error": f"Assinafy (Assignment): {assignment_res.status_code}"}
+            print(f"[DEBUG ASSINAFY] Erro no Assignment: {assignment_res.text}")
+            return {"embed_url": None, "error": f"Assinafy (Assignment): {assignment_res.status_code} - {assignment_res.text}"}
 
         assign_data = assignment_res.json()
         # Na Assinafy, a URL de assinatura individual fica dentro de cada signatário ou no retorno
