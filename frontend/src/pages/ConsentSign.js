@@ -197,8 +197,7 @@ const ConsentSign = () => {
       } else if (data.error) {
         setError(`Erro na Assinafy: ${data.error}`);
       } else {
-        // Fallback para assinatura simples se a API Key não estiver configurada
-        setSuccess(true);
+        setError('A Assinafy não retornou uma URL de assinatura. Verifique sua chave de API no servidor.');
       }
     } catch (err) {
       const msg = err.response?.data?.detail || err.response?.data?.error || 'Erro ao preparar assinatura. Tente novamente.';

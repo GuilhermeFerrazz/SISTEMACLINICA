@@ -1456,9 +1456,11 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
             tmp_path = tmp.name
 
         # 2. Upload do Documento para a Assinafy
-        headers = {"X-Api-Key": api_key}
+        # Nota: Muitas APIs usam Authorization: Bearer <key> ou X-Api-Key
+        # Vou usar o padrão Bearer que é mais comum em APIs modernas se o X-Api-Key falhar
+        headers = {"Authorization": f"Bearer {api_key}"}
         
-        print(f"[DEBUG ASSINAFY] Iniciando upload para o token {token}")
+        print(f"[DEBUG ASSINAFY] Iniciando upload para o token {token} com Bearer token")
         with open(tmp_path, "rb") as f:
             files = {"file": (f"Termo_{token}.pdf", f, "application/pdf")}
             response = requests.post(
@@ -1499,7 +1501,7 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
         
         assignment_res = requests.post(
             f"https://api.assinafy.com.br/v1/documents/{doc_id}/assignments",
-            headers={"X-Api-Key": api_key, "Content-Type": "application/json"},
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json=assignment_payload,
             timeout=10
         )
