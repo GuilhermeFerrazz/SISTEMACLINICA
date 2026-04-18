@@ -193,7 +193,9 @@ const ConsentSign = () => {
       });
       
       if (data.embed_url) {
-        setAssinafyUrl(data.embed_url);
+        // Redireciona o usuário diretamente para o link da Assinafy
+        // Isso resolve o erro de X-Frame-Options (bloqueio de iframe)
+        window.location.href = data.embed_url;
       } else if (data.error) {
         setError(`Erro na Assinafy: ${data.error}`);
       } else {
@@ -272,12 +274,10 @@ const ConsentSign = () => {
     <div style={styles.container}>
       <div style={styles.card}>
         {assinafyUrl ? (
-          <div style={{ height: '600px', width: '100%' }}>
-            <iframe
-              src={assinafyUrl}
-              style={{ width: '100%', height: '100%', border: 'none' }}
-              title="Assinatura Digital"
-            />
+          <div style={styles.loadingContainer}>
+            <div style={styles.loadingSpinner}></div>
+            <p style={styles.loadingText}>Redirecionando para o ambiente seguro de assinatura...</p>
+            <p style={styles.subLoadingText}>Caso não seja redirecionado automaticamente, <a href={assinafyUrl} style={styles.link}>clique aqui</a>.</p>
           </div>
         ) : (
           <>
@@ -716,6 +716,21 @@ const styles = {
     textAlign: 'center',
     color: '#666',
     fontSize: '14px',
+  },
+  subLoadingText: {
+    textAlign: 'center',
+    color: '#888',
+    fontSize: '12px',
+    marginTop: '8px',
+  },
+  loadingContainer: {
+    padding: '40px 20px',
+    textAlign: 'center',
+  },
+  link: {
+    color: '#1a3a1a',
+    textDecoration: 'underline',
+    fontWeight: '600',
   },
   errorIcon: {
     width: '48px',
