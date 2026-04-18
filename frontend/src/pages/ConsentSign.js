@@ -193,9 +193,8 @@ const ConsentSign = () => {
       });
       
       if (data.embed_url) {
-        // Redireciona o usuário diretamente para o link da Assinafy
-        // Isso resolve o erro de X-Frame-Options (bloqueio de iframe)
-        window.location.href = data.embed_url;
+        // Agora usamos o modo EMBED real com iframe
+        setAssinafyUrl(data.embed_url);
       } else if (data.error) {
         setError(`Erro na Assinafy: ${data.error}`);
       } else {
@@ -274,10 +273,25 @@ const ConsentSign = () => {
     <div style={styles.container}>
       <div style={styles.card}>
         {assinafyUrl ? (
-          <div style={styles.loadingContainer}>
-            <div style={styles.loadingSpinner}></div>
-            <p style={styles.loadingText}>Redirecionando para o ambiente seguro de assinatura...</p>
-            <p style={styles.subLoadingText}>Caso não seja redirecionado automaticamente, <a href={assinafyUrl} style={styles.link}>clique aqui</a>.</p>
+          <div style={styles.assinafyContainer}>
+            <iframe
+              src={assinafyUrl}
+              style={styles.iframe}
+              title="Assinatura Assinafy"
+              frameBorder="0"
+              allow="geolocation"
+            />
+            <div style={styles.iframeFooter}>
+              <p style={styles.iframeNote}>
+                Ambiente seguro de assinatura digital Assinafy.
+              </p>
+              <button 
+                onClick={() => setAssinafyUrl(null)} 
+                style={styles.backButton}
+              >
+                Voltar
+              </button>
+            </div>
           </div>
         ) : (
           <>
@@ -726,6 +740,41 @@ const styles = {
   loadingContainer: {
     padding: '40px 20px',
     textAlign: 'center',
+  },
+  assinafyContainer: {
+    width: '100%',
+    height: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    minHeight: '600px',
+  },
+  iframe: {
+    width: '100%',
+    flex: 1,
+    minHeight: '500px',
+    borderRadius: '8px',
+    border: '1px solid #e5e7eb',
+  },
+  iframeFooter: {
+    marginTop: '12px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '0 4px',
+  },
+  iframeNote: {
+    fontSize: '11px',
+    color: '#888',
+    margin: 0,
+  },
+  backButton: {
+    background: 'none',
+    border: 'none',
+    color: '#666',
+    fontSize: '12px',
+    textDecoration: 'underline',
+    cursor: 'pointer',
+    padding: '4px 8px',
   },
   link: {
     color: '#1a3a1a',

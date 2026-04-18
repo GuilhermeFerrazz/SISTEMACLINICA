@@ -1659,10 +1659,11 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
         print(f"[DEBUG ASSINAFY] Signer pronto para uso (ID: {signer_id})")
 
         # 4. Criar o Pedido de Assinatura (Assignment)
-        # Endpoint correto: POST /v1/documents/{doc_id}/assignments
-        # O signer é referenciado pelo ID criado no passo anterior.
+        # Para funcionar 100% EMBED dentro do seu site, usamos o método "collect".
+        # O método "virtual" (anterior) exige que o paciente receba e-mail e assine no ambiente da Assinafy.
+        # O método "collect" permite que a assinatura ocorra diretamente no iframe.
         assignment_payload = {
-            "method": "virtual",
+            "method": "collect",
             "signers": [
                 {
                     "id": signer_id
@@ -1711,6 +1712,12 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
         if not embed_url:
             print(f"[DEBUG ASSINAFY] URL de assinatura não encontrada no JSON: {assign_data}")
             return {"embed_url": None, "error": "Assinafy criou o documento, mas não retornou o link de assinatura."}
+
+        # IMPORTANTE: Para permitir o EMBED em iframe, a Assinafy exige o parâmetro ?embed=true na URL
+        if "?" in embed_url:
+            embed_url += "&embed=true"
+        else:
+            embed_url += "?embed=true"
 
         # Salva o ID do documento para controle
         await db.consents.update_one({"token": token}, {"$set": {"assinafy_id": doc_id}})
