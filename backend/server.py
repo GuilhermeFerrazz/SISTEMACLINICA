@@ -1497,6 +1497,36 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
             print(f"[DEBUG ASSINAFY] ID não encontrado na resposta: {doc_data}")
             return {"embed_url": None, "error": f"Assinafy: ID do documento não encontrado na resposta: {str(doc_data)[:100]}"}
 
+        # 2.1 Aguardar o processamento do documento (metadata_processing)
+        # A Assinafy pode levar alguns segundos para processar o PDF recém-enviado.
+        import time
+        max_retries = 5
+        doc_ready = False
+        for i in range(max_retries):
+            check_res = requests.get(
+                f"https://api.assinafy.com.br/v1/documents/{doc_id}",
+                headers=headers,
+                timeout=10
+            )
+            if check_res.status_code == 200:
+                check_data = check_res.json()
+                # Se a resposta vier encapsulada em 'data'
+                if check_data.get("data"):
+                    check_data = check_data["data"]
+                
+                status = check_data.get("status")
+                print(f"[DEBUG ASSINAFY] Verificando status do doc {doc_id} (tentativa {i+1}): {status}")
+                
+                if status not in ["metadata_processing", "processing"]:
+                    doc_ready = True
+                    break
+            
+            time.sleep(2) # Aguarda 2 segundos antes da próxima verificação
+        
+        if not doc_ready:
+            print(f"[DEBUG ASSINAFY] Documento ainda em processamento após {max_retries} tentativas.")
+            # Prosseguimos mesmo assim, mas o risco de erro 400 continua se a API for lenta.
+
         # 3. Criar o Signer na Assinafy
         # A API exige que o signer seja criado previamente e seu ID seja usado no assignment.
         # Endpoint: POST /v1/accounts/{account_id}/signers
