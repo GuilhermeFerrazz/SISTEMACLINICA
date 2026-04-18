@@ -1422,13 +1422,20 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
     """
     Cria o documento na Assinafy e retorna a URL de Embed.
     """
+    print(f"[DEBUG ASSINAFY] Iniciando prepare_assinafy para token: {token}")
+    
     consent = await db.consents.find_one({"token": token})
     if not consent:
-        raise HTTPException(status_code=404, detail="Termo não encontrado")
+        print(f"[DEBUG ASSINAFY] Consentimento não encontrado para token: {token}")
+        return {"embed_url": None, "error": "Termo de consentimento não encontrado no sistema."}
     
     api_key = os.environ.get("ASSINAFY_API_KEY")
     if not api_key:
-        return {"embed_url": None}
+        print("[DEBUG ASSINAFY] ASSINAFY_API_KEY não configurada no Railway.")
+        return {"embed_url": None, "error": "Chave de API da Assinafy não configurada no servidor (Railway)."}
+
+    # Limpa a chave de possíveis espaços em branco
+    api_key = api_key.strip()
 
     # Atualiza o consentimento com a opção de imagem
     await db.consents.update_one(
@@ -1436,69 +1443,59 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
         {"$set": {"use_image_for_marketing": payload.use_image_for_marketing}}
     )
 
-    # Chamada Real para a API da Assinafy
     try:
         import requests
         import tempfile
         from fpdf import FPDF
         
-        backend_url = os.environ.get("BACKEND_URL", "http://localhost:8000")
+        backend_url = os.environ.get("BACKEND_URL", "https://app.drguilhermeferraz.com")
         
-        # 1. Gerar um PDF temporário com o texto do termo
-        # A API da Assinafy requer o upload de um arquivo real
+        # 1. Gerar um PDF temporário
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Arial", size=12)
-        pdf.multi_cell(0, 10, consent.get("consent_text", ""))
+        # Sanitiza o texto para evitar erros na FPDF
+        clean_text = consent.get("consent_text", "").encode('latin-1', 'replace').decode('latin-1')
+        pdf.multi_cell(0, 10, clean_text)
         
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
             pdf.output(tmp.name)
             tmp_path = tmp.name
 
-        # 2. Upload do Documento para a Assinafy
-        # Tentamos com os dois cabeçalhos mais comuns para garantir compatibilidade
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "X-Api-Key": api_key
-        }
+        # 2. Upload do Documento
+        headers = {"Authorization": f"Bearer {api_key}", "X-Api-Key": api_key}
         
-        print(f"[DEBUG ASSINAFY] Iniciando upload para o token {token}")
-        try:
-            with open(tmp_path, "rb") as f:
-                files = {"file": (f"Termo_{token}.pdf", f, "application/pdf")}
-                response = requests.post(
-                    "https://api.assinafy.com.br/v1/documents",
-                    headers=headers,
-                    files=files,
-                    timeout=20
-                )
-        except Exception as upload_err:
-            print(f"[DEBUG ASSINAFY] Erro de conexão no Upload: {upload_err}")
-            return {"embed_url": None, "error": f"Erro de conexão: {str(upload_err)}"}
+        print(f"[DEBUG ASSINAFY] Fazendo upload do PDF: {tmp_path}")
+        with open(tmp_path, "rb") as f:
+            files = {"file": (f"Termo_{token}.pdf", f, "application/pdf")}
+            response = requests.post(
+                "https://api.assinafy.com.br/v1/documents",
+                headers=headers,
+                files=files,
+                timeout=25
+            )
 
-        print(f"[DEBUG ASSINAFY] Status Upload: {response.status_code}")
         # Limpa o arquivo temporário
         import os as native_os
         if native_os.path.exists(tmp_path):
             native_os.unlink(tmp_path)
         
+        print(f"[DEBUG ASSINAFY] Resposta Upload ({response.status_code}): {response.text}")
+        
         if response.status_code not in [200, 201]:
-            print(f"[DEBUG ASSINAFY] Erro no Upload: {response.text}")
-            # Salva o erro no banco para diagnóstico remoto
-            await db.consents.update_one({"token": token}, {"$set": {"last_api_error": response.text}})
-            return {"embed_url": None, "error": f"Assinafy (Upload {response.status_code}): {response.text[:100]}"}
+            return {"embed_url": None, "error": f"Assinafy Upload Error ({response.status_code}): {response.text[:150]}"}
 
         doc_data = response.json()
         doc_id = doc_data.get("id")
-        print(f"[DEBUG ASSINAFY] Documento criado com ID: {doc_id}")
+        if not doc_id:
+            return {"embed_url": None, "error": "Assinafy não retornou um ID de documento após o upload."}
 
-        # 3. Criar o Pedido de Assinatura (Assignment) para obter a URL de Embed
-        print(f"[DEBUG ASSINAFY] Criando Assignment para doc_id {doc_id}")
+        # 3. Criar o Assignment
         assignment_payload = {
             "method": "virtual",
             "signers": [
                 {
-                    "full_name": consent.get("patient_name"),
+                    "full_name": consent.get("patient_name", "Paciente"),
                     "government_id": payload.cpf,
                     "role": "signer"
                 }
@@ -1507,47 +1504,49 @@ async def prepare_assinafy(token: str, payload: AssinafyPreparePayload):
             "webhook_url": f"{backend_url}/api/webhook/assinafy"
         }
         
+        print(f"[DEBUG ASSINAFY] Criando Assignment para doc_id: {doc_id}")
         assignment_res = requests.post(
             f"https://api.assinafy.com.br/v1/documents/{doc_id}/assignments",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "X-Api-Key": api_key,
-                "Content-Type": "application/json"
-            },
+            headers={**headers, "Content-Type": "application/json"},
             json=assignment_payload,
-            timeout=15
+            timeout=20
         )
 
-        print(f"[DEBUG ASSINAFY] Status Assignment: {assignment_res.status_code}")
+        print(f"[DEBUG ASSINAFY] Resposta Assignment ({assignment_res.status_code}): {assignment_res.text}")
+        
         if assignment_res.status_code not in [200, 201]:
-            print(f"[DEBUG ASSINAFY] Erro no Assignment: {assignment_res.text}")
-            await db.consents.update_one({"token": token}, {"$set": {"last_api_error": assignment_res.text}})
-            return {"embed_url": None, "error": f"Assinafy (Assignment {assignment_res.status_code}): {assignment_res.text[:100]}"}
+            return {"embed_url": None, "error": f"Assinafy Assignment Error ({assignment_res.status_code}): {assignment_res.text[:150]}"}
 
         assign_data = assignment_res.json()
-        # Na Assinafy, a URL de assinatura individual fica dentro de cada signatário ou no retorno
-        # Se for Embed, geralmente retorna um embed_url ou o link do primeiro signatário
         
-        # Tenta pegar a URL de assinatura do primeiro signatário
-        signers = assign_data.get("data", {}).get("signers", [])
-        if not signers and "signers" in assign_data:
-            signers = assign_data.get("signers")
-            
+        # Busca a URL de assinatura (sign_url ou embed_url)
+        # A estrutura da Assinafy pode variar, tentamos os caminhos comuns
         embed_url = None
+        
+        # Caminho 1: data.signers[0].sign_url
+        signers = assign_data.get("data", {}).get("signers", [])
         if signers:
-            embed_url = signers[0].get("sign_url") # URL para o paciente assinar
+            embed_url = signers[0].get("sign_url")
+            
+        # Caminho 2: signers[0].sign_url (raiz)
+        if not embed_url and assign_data.get("signers"):
+            embed_url = assign_data.get("signers")[0].get("sign_url")
 
-        # Salva o ID do documento
-        await db.consents.update_one(
-            {"token": token},
-            {"$set": {"assinafy_id": doc_id}}
-        )
+        if not embed_url:
+            print(f"[DEBUG ASSINAFY] URL de assinatura não encontrada no JSON: {assign_data}")
+            return {"embed_url": None, "error": "Assinafy criou o documento, mas não retornou o link de assinatura."}
 
+        # Salva o ID do documento para controle
+        await db.consents.update_one({"token": token}, {"$set": {"assinafy_id": doc_id}})
+
+        print(f"[DEBUG ASSINAFY] Sucesso! URL de assinatura obtida: {embed_url}")
         return {"embed_url": embed_url}
         
     except Exception as e:
-        print(f"Erro na integração Assinafy: {str(e)}")
-        return {"embed_url": None}
+        import traceback
+        print(f"[DEBUG ASSINAFY] EXCEÇÃO CRÍTICA: {str(e)}")
+        traceback.print_exc()
+        return {"embed_url": None, "error": f"Erro interno no servidor ao processar Assinafy: {str(e)}"}
 
 # ==================== CONSENT ====================
 
