@@ -2621,6 +2621,20 @@ async def build_receipt_pdf(record: dict, patient: dict, settings: dict):
         [Paragraph("Recibo Nº:", s_label), Paragraph(rec_num, s_value)],
         [Paragraph("Data:", s_label),      Paragraph(data_fmt, s_value)],
     ]
+    # Duração da consulta (se registrada pelo cronômetro)
+    dur_sec = record.get("consultation_duration_seconds")
+    if dur_sec and int(dur_sec) > 0:
+        ds = int(dur_sec)
+        h = ds // 3600
+        m = (ds % 3600) // 60
+        s = ds % 60
+        if h > 0:
+            dur_fmt = f"{h}h {m:02d}min"
+        elif m > 0:
+            dur_fmt = f"{m}min {s:02d}s"
+        else:
+            dur_fmt = f"{s}s"
+        tdata.append([Paragraph("Duração:", s_label), Paragraph(dur_fmt, s_value)])
     t = Table(tdata, colWidths=[35*mm, None])
     t.setStyle(TableStyle([
         ("VALIGN", (0,0), (-1,-1), "TOP"),
@@ -2643,6 +2657,43 @@ async def build_receipt_pdf(record: dict, patient: dict, settings: dict):
     ]))
     story.append(t)
     story.append(Spacer(1, sp_section))
+
+    # Produtos utilizados (se houver)
+    products_used = record.get("products_used") or []
+    if products_used:
+        story.append(Paragraph("PRODUTOS UTILIZADOS", s_section))
+        prod_rows = [[
+            Paragraph("<b>Produto</b>", s_value),
+            Paragraph("<b>Lote</b>",    s_value),
+            Paragraph("<b>Qtd</b>",     s_value),
+            Paragraph("<b>Un.</b>",     s_value),
+        ]]
+        for pu in products_used:
+            qty_raw = pu.get("quantity") or 0
+            try:
+                qty_val = float(qty_raw)
+                qty_fmt = f"{qty_val:.1f}".rstrip("0").rstrip(".") if qty_val % 1 else str(int(qty_val))
+            except Exception:
+                qty_fmt = str(qty_raw)
+            prod_rows.append([
+                Paragraph(str(pu.get("product_name") or ""), s_value),
+                Paragraph(str(pu.get("batch_number") or "—"), s_value),
+                Paragraph(qty_fmt, s_value),
+                Paragraph(str(pu.get("unit") or "un"), s_value),
+            ])
+        t = Table(prod_rows, colWidths=[None, 30*mm, 18*mm, 15*mm])
+        t.setStyle(TableStyle([
+            ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 3),
+            ("TOPPADDING",    (0,0), (-1,-1), 3),
+            ("BACKGROUND",    (0,0), (-1,0),  rl_colors.lightgrey),
+            ("LINEBELOW",     (0,0), (-1,0),  0.5, h_color),
+            ("LINEBELOW",     (0,-1),(-1,-1), 0.5, rl_colors.lightgrey),
+            ("ALIGN",         (2,1), (2,-1),  "RIGHT"),
+            ("ALIGN",         (3,1), (3,-1),  "CENTER"),
+        ]))
+        story.append(t)
+        story.append(Spacer(1, sp_section))
 
     # Resumo financeiro
     amount = float(record.get("payment_amount") or 0)

@@ -44,8 +44,8 @@ Usuário (Dr. Guilherme Ferraz) tem um sistema clínica baseado em React + FastA
 
 ## Backlog (P1/P2)
 - P1: na agenda, mostrar nos agendamentos `completed` um botão "Ver Atendimento" ligando ao record criado
-- P2: incluir duração da consulta no recibo PDF
-- P2: incluir lista de produtos utilizados no recibo PDF
+- ~~P2: incluir duração da consulta no recibo PDF~~ ✅ **feito 23/Jun**
+- ~~P2: incluir lista de produtos utilizados no recibo PDF~~ ✅ **feito 23/Jun**
 - P2: split de `server.py` (3500+ linhas) em routers (auth, agenda, prontuario, financeiro)
 - P2: padronizar `id` vs `qr_code_id` no schema de produtos
 
