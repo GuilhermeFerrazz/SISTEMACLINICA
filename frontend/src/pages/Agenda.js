@@ -1028,7 +1028,7 @@ const Agenda = () => {
                     <DollarSign className="w-3 h-3" />Total
                   </p>
                   <p className="text-sm font-bold mt-1 text-primary">
-                    R$ {(parseFloat(recordData.payment_amount || 0)).toFixed(2).replace('.', ',')}
+                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(parseFloat(recordData.payment_amount || 0))}
                   </p>
                 </div>
               </div>
