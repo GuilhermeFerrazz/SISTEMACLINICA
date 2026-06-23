@@ -1,0 +1,43 @@
+{
+  "summary": "Tested Agenda→Consulta unified flow end-to-end. 7/8 backend tests passed and full frontend UI flow works: login, navigate to /agenda, click 'Iniciar Atendimento' navigates to /atendimento/agenda/{id}, timer counts up, patient Maria Silva pre-filled, Botox pre-selected, all 5 tabs present (Anamnese, Procedimento, Fotos, Produtos, Orçamento), Finalizar button present, receipt PDF endpoint returns valid application/pdf, GET /api/appointments/{id} works (200 + 404), POST /medical-records with appointment_id correctly marks the appointment as 'completed' and creates a finance income transaction. ONE CRITICAL BUG: stock deduction silently fails — botox quantity NOT reduced after consultation.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/medical-records",
+        "issue": "Stock NOT deducted for products_used. After creating a record with products_used=[{product_id, quantity:50}], the product quantity in /api/products remains unchanged (still 200, expected 150). Root cause: server.py:849 queries `db.products.find_one({\"id\": product_id})` and line 852-855 updates `{\"id\": product_id}`, but products are stored in MongoDB with the key `qr_code_id`, not `id` (see /api/products GET which maps qr_code_id→id only on response). Lookup returns None, so the $inc update is never executed and no movement record is created. Movement integration broken in same way.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_consultation_flow.py",
+    "/app/test_reports/pytest/consultation_flow.xml"
+  ],
+  "action_items": [
+    "Fix server.py create_medical_record stock deduction: replace `db.products.find_one({\"id\": product_id})` with `db.products.find_one({\"qr_code_id\": product_id})` and the corresponding update_one filter on line 852-855. Same for movement.product_name lookup. After the fix, rerun test_consultation_flow.py — test_create_medical_record_full_flow should pass."
+  ],
+  "critical_code_review_comments": [
+    "server.py uses inconsistent identifiers for products: storage uses `qr_code_id` but reads/writes elsewhere expect `id`. This is a footgun — any feature querying products by id will silently fail. Recommend either storing `id` field (= qr_code_id) at write time in /api/products POST/PUT, or auditing every db.products.find_one/update_one call for the right filter.",
+    "Bare `except:` in get_current_user (line 551) hides real errors. Use `except Exception as e` and log.",
+    "server.py is very large (~3500+ lines based on truncation) — consider splitting into routers (auth, agenda, prontuario, financeiro, etc.) for maintainability."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_consultation_flow.py (new)"
+  ],
+  "success_rate": {
+    "backend": "87.5% (7/8)",
+    "frontend": "100% on validated checks (login, agenda navigation, timer, pre-fill, 5 tabs, finalize button presence)"
+  },
+  "test_credentials": "admin@test.com / admin123 (cookie HTTPOnly auth)",
+  "seed_data_creation": "Existing seed used as-is; test cleans up (delete record + reset appointment.status=scheduled + restore product quantity). Cleanup ran successfully so state is restored.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "After main agent fixes the product_id vs qr_code_id mismatch in POST /api/medical-records, just re-run: pytest /app/backend/tests/test_consultation_flow.py -v. All 8 tests should pass. UI was manually verified via Playwright for the full flow up to the Anamnese tab; the finalize→success-dialog→download-receipt-button→back-to-agenda-button chain was not clicked end-to-end via UI but the underlying API (PDF generation, appointment completion, finance transaction) is verified working. The bug is purely in stock integration.",
+  "rca of the issue": "Bug: products_used does not decrement stock. RCA: POST /api/medical-records iterates products_used and calls `db.products.find_one({'id': product_id})` + `db.products.update_one({'id': product_id}, {'$inc': {'quantity': -qty}})`. However products are inserted with `qr_code_id` (server.py POST /products line 1251) and never receive an `id` field in MongoDB. GET /api/products synthesizes `p['id'] = p['qr_code_id']` only in the response. So when frontend POSTs products_used with the product 'id' it received, the backend lookup misses. Reproduction: POST /api/medical-records with products_used=[{product_id: <botox_id>, quantity: 50}] → /api/products botox quantity stays 200. Mitigation: change both filters in create_medical_record to use `qr_code_id`. Long-term: persist `id` alongside `qr_code_id` on product create/update so every collection uses a uniform key."
+}
