@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import Layout from '../components/Layout';
@@ -12,9 +12,9 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import {
-  User, Stethoscope, Package, DollarSign, Save, ChevronRight,
+  User, Stethoscope, Package, DollarSign, ChevronRight,
   Plus, Trash2, AlertTriangle, CheckCircle, Clock, Search, ArrowLeft,
-  Camera, ImagePlus, X, Download, FileText, Timer, Activity, PlayCircle
+  Camera, ImagePlus, X, Download, Timer, Activity
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -122,9 +122,7 @@ export default function Atendimento() {
     };
   }, []);
 
-  useEffect(() => { load(); }, [patientIdParam, appointmentId]);
-
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       let pid = patientIdParam;
@@ -162,7 +160,9 @@ export default function Atendimento() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [patientIdParam, appointmentId, isFromAgenda]);
+
+  useEffect(() => { load(); }, [load]);
 
   const selectProc = (proc) => {
     setForm(f => ({ ...f, procedure_id: proc.id, procedure_name: proc.name }));

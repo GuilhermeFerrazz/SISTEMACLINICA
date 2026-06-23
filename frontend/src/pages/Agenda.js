@@ -13,7 +13,7 @@ import {
   Calendar, Clock, Plus, User, Phone, ChevronLeft, ChevronRight, 
   AlertTriangle, CheckCircle2, XCircle, Package, MessageCircle,
   Sparkles, ClipboardList, Bell, Send, Eye, UserPlus, AlertCircle,
-  PlayCircle, Stethoscope, FileText
+  PlayCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -633,7 +633,7 @@ const Agenda = () => {
                               </div>
                             )}
                             {apt.notes && (
-                              <p className="text-sm text-muted-foreground mt-2 italic">"{apt.notes}"</p>
+                              <p className="text-sm text-muted-foreground mt-2 italic">&ldquo;{apt.notes}&rdquo;</p>
                             )}
                           </div>
                           <div className="flex flex-col gap-2">
