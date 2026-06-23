@@ -845,12 +845,12 @@ async def create_medical_record(record: MedicalRecordCreate, current_user: dict 
         product_id = usage.get("product_id")
         qty = usage.get("quantity", 0)
         if product_id and float(qty) > 0:
-            # Busca o produto para validar estoque
-            product = await db.products.find_one({"id": product_id})
+            # Busca o produto para validar estoque (produtos usam qr_code_id como id)
+            product = await db.products.find_one({"$or": [{"qr_code_id": product_id}, {"id": product_id}]})
             if product:
                 # Atualiza quantidade no estoque (usando $inc com valor negativo para float)
                 await db.products.update_one(
-                    {"id": product_id},
+                    {"$or": [{"qr_code_id": product_id}, {"id": product_id}]},
                     {"$inc": {"quantity": -float(qty)}}
                 )
                 # Registra a movimentação de saída
