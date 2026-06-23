@@ -1,0 +1,45 @@
+{
+  "summary": "Tested the new 'Ver Atendimento' feature in /agenda end-to-end (backend + frontend). All 6 backend tests pass and the full UI flow works: completed appointment shows only the 'Ver Atendimento' button (no WhatsApp/Confirmar/Iniciar/Cancelar), dialog opens with all required sections (header, 4 summary cards, Atendimento clinical fields, products table, pagamento), receipt PDF download is triggered, close/reopen works, and 'Novo Atendimento' navigates to /atendimento/{patient_id}. One minor cosmetic issue: total formatted as 'R$ 1500,00' instead of 'R$ 1.500,00' (no thousands separator).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Record View Dialog (Ver Atendimento)",
+        "issues": [
+          "Total card shows 'R$ 1500,00' instead of 'R$ 1.500,00'. Agenda.js line ~1031 uses parseFloat(payment_amount).toFixed(2).replace('.', ',') which omits the thousands separator. Recommend using new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value) for consistent BRL formatting (this is how other screens like the receipt PDF and finance pages format it)."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_view_record.py",
+    "/app/test_reports/pytest/view_record.xml"
+  ],
+  "action_items": [
+    "(Optional/cosmetic) Replace `R$ ${(parseFloat(recordData.payment_amount || 0)).toFixed(2).replace('.', ',')}` in Agenda.js line ~1031 with Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(recordData.payment_amount || 0) so values like 1500 render as 'R$ 1.500,00'.",
+    "Pre-existing bug from iteration_1 (NOT related to this feature): POST /api/medical-records does not deduct product stock because the lookup uses {'id': product_id} but products are stored with qr_code_id. Still need to fix server.py create_medical_record filters from 'id' to 'qr_code_id'. This was flagged previously and is unrelated to Ver Atendimento."
+  ],
+  "critical_code_review_comments": [
+    "Agenda.js is now ~1205 lines — consider extracting the RecordViewDialog into its own component file (RecordViewDialog.jsx) along with openRecordView/downloadRecordReceipt helpers for maintainability.",
+    "openRecordView fallback logic uses `list.find(r => r.date === apt.date)` — if the same patient has multiple records on the same date this picks the first one regardless of which appointment created it. Safer to filter by `r.appointment_id === apt.id` first and fall back to date matching only if no appointment_id match is found.",
+    "Currency formatting is inconsistent across the app: receipt PDF and finance use Intl.NumberFormat (pt-BR / BRL) while this new dialog uses manual toFixed+replace. Standardize through a single helper (utils/format.js)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_view_record.py (new - 6 tests, all passing)"
+  ],
+  "success_rate": {
+    "backend": "100% (6/6)",
+    "frontend": "100% on all critical flow checks (button visibility, dialog open, content render, all fields, PDF download triggered, close+reopen, navigation to new atendimento)"
+  },
+  "test_credentials": "admin@test.com / admin123 (HTTPOnly cookie auth)",
+  "seed_data_creation": "Used existing seed (completed appointment a57561a8 at 15:00 + record 9f5e631b). No new data created, no cleanup needed.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Ver Atendimento feature is fully working. test_view_record.py covers backend coverage permanently. UI verified via Playwright: dialog content matches all expected fields, download triggers a blob file 'recibo_Maria_Silva_2026-06-23.pdf', navigation to /atendimento/{patient_id} works. Only cosmetic improvement remaining is the currency thousands-separator (line ~1031 of Agenda.js). The pre-existing stock-deduction bug from iteration_1 has NOT been verified as fixed in this iteration — flag for retest if main agent claims fix.",
+  "rca of the issue": "No new bugs introduced by this feature. The 'R$ 1500,00' display is not a bug per se but inconsistent with the rest of the app — use Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}) for consistency."
+}

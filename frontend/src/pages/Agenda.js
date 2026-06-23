@@ -13,7 +13,7 @@ import {
   Calendar, Clock, Plus, User, Phone, ChevronLeft, ChevronRight, 
   AlertTriangle, CheckCircle2, XCircle, Package, MessageCircle,
   Sparkles, ClipboardList, Bell, Send, Eye, UserPlus, AlertCircle,
-  PlayCircle
+  PlayCircle, FileText, Download, Timer, Stethoscope, DollarSign
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -72,6 +72,9 @@ const Agenda = () => {
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [previewMessage, setPreviewMessage] = useState('');
   const [clinicName, setClinicName] = useState('');
+  const [isRecordOpen, setIsRecordOpen] = useState(false);
+  const [recordData, setRecordData] = useState(null);
+  const [recordLoading, setRecordLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -217,6 +220,56 @@ const Agenda = () => {
       fetchData();
     } catch (error) {
       toast.error('Erro ao excluir agendamento');
+    }
+  };
+
+  const openRecordView = async (apt) => {
+    setIsRecordOpen(true);
+    setRecordData(null);
+    setRecordLoading(true);
+    try {
+      let recordId = apt.record_id;
+      if (!recordId) {
+        // Fallback: busca o prontuário mais recente do paciente nessa data
+        const { data: list } = await axios.get(
+          `${API}/medical-records/patient/${apt.patient_id}`,
+          { withCredentials: true }
+        );
+        const match = (list || []).find(r => r.date === apt.date);
+        recordId = match?.id;
+      }
+      if (!recordId) {
+        toast.error('Prontuário desse atendimento não foi encontrado');
+        setIsRecordOpen(false);
+        return;
+      }
+      const { data } = await axios.get(`${API}/medical-records/${recordId}`, { withCredentials: true });
+      setRecordData({ ...data, _appointment: apt });
+    } catch (e) {
+      console.error(e);
+      toast.error('Erro ao carregar prontuário');
+      setIsRecordOpen(false);
+    } finally {
+      setRecordLoading(false);
+    }
+  };
+
+  const downloadRecordReceipt = async () => {
+    if (!recordData?.id) return;
+    try {
+      const r = await axios.get(`${API}/medical-records/${recordData.id}/receipt-pdf`, {
+        withCredentials: true, responseType: 'blob'
+      });
+      const url = URL.createObjectURL(r.data);
+      const a = document.createElement('a');
+      a.href = url;
+      const safeName = (recordData._appointment?.patient_name || 'paciente').replace(/ /g, '_');
+      a.download = `recibo_${safeName}_${recordData.date}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Recibo baixado');
+    } catch {
+      toast.error('Erro ao gerar recibo');
     }
   };
 
@@ -682,6 +735,17 @@ const Agenda = () => {
                                 </Button>
                               </>
                             )}
+                            {apt.status === 'completed' && (
+                              <Button
+                                size="sm"
+                                className="bg-primary text-primary-foreground hover:bg-primary/90 gap-2"
+                                onClick={() => openRecordView(apt)}
+                                data-testid={`view-record-button-${apt.id}`}
+                              >
+                                <FileText className="w-4 h-4" />
+                                <span className="hidden sm:inline">Ver Atendimento</span>
+                              </Button>
+                            )}
                             <Button
                               size="sm"
                               variant="ghost"
@@ -891,6 +955,244 @@ const Agenda = () => {
                 <Send className="w-4 h-4" />
                 Enviar pelo WhatsApp
               </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* View Record Dialog (Ver Atendimento) */}
+      <Dialog open={isRecordOpen} onOpenChange={setIsRecordOpen}>
+        <DialogContent
+          className="max-w-3xl max-h-[90vh] overflow-y-auto"
+          data-testid="record-view-dialog"
+        >
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="w-5 h-5 text-primary" />
+              Atendimento realizado
+            </DialogTitle>
+            {recordData?._appointment && (
+              <DialogDescription>
+                {recordData._appointment.patient_name} ·{' '}
+                {new Date(recordData._appointment.date + 'T00:00:00').toLocaleDateString('pt-BR')}{' '}
+                · {recordData._appointment.time}
+              </DialogDescription>
+            )}
+          </DialogHeader>
+
+          {recordLoading && (
+            <div className="flex justify-center py-10">
+              <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+            </div>
+          )}
+
+          {!recordLoading && recordData && (
+            <div className="space-y-4 mt-2">
+              {/* Resumo topo */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="p-3 rounded-lg bg-muted/30 border border-border/40">
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Stethoscope className="w-3 h-3" />Procedimento
+                  </p>
+                  <p className="text-sm font-medium mt-1 truncate" title={recordData.procedure_name}>
+                    {recordData.procedure_name || '—'}
+                  </p>
+                </div>
+                <div className="p-3 rounded-lg bg-muted/30 border border-border/40">
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Timer className="w-3 h-3" />Duração
+                  </p>
+                  <p className="text-sm font-mono font-bold mt-1 text-primary">
+                    {(() => {
+                      const s = parseInt(recordData.consultation_duration_seconds || 0, 10);
+                      if (!s) return '—';
+                      const h = Math.floor(s / 3600);
+                      const m = Math.floor((s % 3600) / 60);
+                      const ss = s % 60;
+                      if (h > 0) return `${h}h ${String(m).padStart(2, '0')}min`;
+                      if (m > 0) return `${m}min ${String(ss).padStart(2, '0')}s`;
+                      return `${ss}s`;
+                    })()}
+                  </p>
+                </div>
+                <div className="p-3 rounded-lg bg-muted/30 border border-border/40">
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Package className="w-3 h-3" />Produtos
+                  </p>
+                  <p className="text-sm font-medium mt-1">
+                    {(recordData.products_used || []).length} {(recordData.products_used || []).length === 1 ? 'item' : 'itens'}
+                  </p>
+                </div>
+                <div className="p-3 rounded-lg bg-muted/30 border border-border/40">
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                    <DollarSign className="w-3 h-3" />Total
+                  </p>
+                  <p className="text-sm font-bold mt-1 text-primary">
+                    R$ {(parseFloat(recordData.payment_amount || 0)).toFixed(2).replace('.', ',')}
+                  </p>
+                </div>
+              </div>
+
+              {/* Anamnese (se presente) */}
+              {recordData.anamnese && (
+                <div className="border border-border/40 rounded-lg p-4">
+                  <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">
+                    Anamnese
+                  </h3>
+                  <div className="space-y-2 text-sm">
+                    {recordData.anamnese.queixa_principal && (
+                      <p><span className="font-medium">Queixa:</span> {recordData.anamnese.queixa_principal}</p>
+                    )}
+                    {recordData.anamnese.historia_atual && (
+                      <p><span className="font-medium">História:</span> {recordData.anamnese.historia_atual}</p>
+                    )}
+                    {recordData.anamnese.alergias_informadas && (
+                      <p className="text-amber-700">
+                        <AlertTriangle className="w-3 h-3 inline mr-1" />
+                        <span className="font-medium">Alergias:</span> {recordData.anamnese.alergias_informadas}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Notas clínicas */}
+              {(recordData.chief_complaint || recordData.clinical_notes || recordData.diagnosis ||
+                recordData.treatment_plan || recordData.techniques_used || recordData.observations ||
+                recordData.evolution_notes || recordData.next_session_notes) && (
+                <div className="border border-border/40 rounded-lg p-4">
+                  <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">
+                    Atendimento
+                  </h3>
+                  <div className="space-y-2 text-sm">
+                    {[
+                      ['Queixa', recordData.chief_complaint],
+                      ['Notas clínicas', recordData.clinical_notes],
+                      ['Diagnóstico', recordData.diagnosis],
+                      ['Plano de tratamento', recordData.treatment_plan],
+                      ['Técnicas utilizadas', recordData.techniques_used],
+                      ['Recomendações', recordData.observations],
+                      ['Evolução', recordData.evolution_notes],
+                      ['Próxima sessão', recordData.next_session_notes],
+                    ].filter(([, v]) => v).map(([k, v]) => (
+                      <p key={k}><span className="font-medium">{k}:</span> {v}</p>
+                    ))}
+                    {recordData.next_session_date && (
+                      <p>
+                        <span className="font-medium">Data próxima sessão:</span>{' '}
+                        {new Date(recordData.next_session_date + 'T00:00:00').toLocaleDateString('pt-BR')}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Produtos */}
+              {recordData.products_used?.length > 0 && (
+                <div className="border border-border/40 rounded-lg p-4">
+                  <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">
+                    Produtos utilizados
+                  </h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="text-xs text-muted-foreground border-b border-border/40">
+                        <tr>
+                          <th className="text-left py-2">Produto</th>
+                          <th className="text-left py-2">Lote</th>
+                          <th className="text-right py-2">Qtd</th>
+                          <th className="text-center py-2 w-12">Un.</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {recordData.products_used.map((p, i) => (
+                          <tr key={i} className="border-b border-border/20 last:border-0">
+                            <td className="py-2">{p.product_name}</td>
+                            <td className="py-2 text-muted-foreground">{p.batch_number || '—'}</td>
+                            <td className="py-2 text-right font-medium">{p.quantity}</td>
+                            <td className="py-2 text-center text-muted-foreground">{p.unit || 'un'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Fotos */}
+              {((recordData.photos_before?.length || 0) + (recordData.photos_after?.length || 0)) > 0 && (
+                <div className="border border-border/40 rounded-lg p-4">
+                  <h3 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">
+                    Fotos
+                  </h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    {[
+                      ['Antes', recordData.photos_before || []],
+                      ['Depois', recordData.photos_after || []],
+                    ].map(([label, photos]) => (
+                      <div key={label}>
+                        <p className="text-xs text-muted-foreground mb-2">{label} ({photos.length})</p>
+                        <div className="grid grid-cols-3 gap-1">
+                          {photos.map((src, i) => (
+                            <img
+                              key={i}
+                              src={src}
+                              alt={`${label} ${i + 1}`}
+                              className="w-full aspect-square object-cover rounded border border-border/40"
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Pagamento */}
+              <div className="border border-border/40 rounded-lg p-4">
+                <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">
+                  Pagamento
+                </h3>
+                <div className="flex flex-wrap items-center gap-4 text-sm">
+                  <span>
+                    <span className="text-muted-foreground">Método:</span>{' '}
+                    <span className="font-medium">{recordData.payment_method || '—'}</span>
+                  </span>
+                  <span>
+                    <span className="text-muted-foreground">Status:</span>{' '}
+                    <span
+                      className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
+                        recordData.payment_status === 'paid' ? 'bg-green-100 text-green-700' :
+                        recordData.payment_status === 'pending' ? 'bg-amber-100 text-amber-700' :
+                        'bg-blue-100 text-blue-700'
+                      }`}
+                    >
+                      {recordData.payment_status === 'paid' ? 'Pago' :
+                       recordData.payment_status === 'pending' ? 'Pendente' : 'Parcial'}
+                    </span>
+                  </span>
+                </div>
+              </div>
+
+              {/* Ações */}
+              <div className="flex gap-2 pt-2 sticky bottom-0 bg-background pb-1">
+                <Button
+                  variant="outline"
+                  onClick={downloadRecordReceipt}
+                  className="flex-1 gap-2"
+                  data-testid="download-record-receipt-button"
+                >
+                  <Download className="w-4 h-4" />
+                  Baixar Recibo PDF
+                </Button>
+                <Button
+                  onClick={() => navigate(`/atendimento/${recordData.patient_id}`)}
+                  className="flex-1 gap-2"
+                  data-testid="new-atendimento-button"
+                >
+                  <FileText className="w-4 h-4" />
+                  Novo Atendimento
+                </Button>
+              </div>
             </div>
           )}
         </DialogContent>
