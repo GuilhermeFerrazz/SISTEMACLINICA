@@ -814,18 +814,106 @@ async def create_patient(patient: PatientCreate, current_user: dict = Depends(ge
     doc.pop("_id", None)
     return doc
 
-@api_router.put("/patients/{id}")
-async def update_patient(id: str, patient: PatientUpdate, current_user: dict = Depends(get_current_user)):
+@api_router.get("/patients/alerts/all")
+async def get_all_alerts(current_user: dict = Depends(get_current_user)):
+    birthdays = await get_birthday_alerts(current_user)
+    botox = await get_botox_alerts(current_user)
+    inactive = await get_inactive_alerts(current_user)
+    return {
+        "birthdays": birthdays,
+        "botox_returns": botox,
+        "inactive_patients": inactive,
+        "total_alerts": len(birthdays) + len(botox) + len(inactive)
+    }
+
+@api_router.get("/patients/{patient_id}")
+async def get_patient(patient_id: str, current_user: dict = Depends(get_current_user)):
+    patient = await db.patients.find_one({"id": patient_id}, {"_id": 0})
+    if not patient:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado")
+    return patient
+
+@api_router.get("/patients/{patient_id}/history")
+async def get_patient_history(patient_id: str, current_user: dict = Depends(get_current_user)):
+    patient = await db.patients.find_one({"id": patient_id}, {"_id": 0})
+    if not patient:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado")
+    appointments = await db.appointments.find({"patient_id": patient_id}, {"_id": 0}).sort("date", -1).to_list(1000)
+    return {"patient": patient, "appointments": appointments}
+
+@api_router.get("/patients/{patient_id}/anamnese")
+async def get_patient_anamnese(patient_id: str, current_user: dict = Depends(get_current_user)):
+    record = await db.medical_records.find_one(
+        {"patient_id": patient_id, "anamnese": {"$exists": True, "$ne": None}},
+        {"_id": 0, "anamnese": 1, "date": 1},
+        sort=[("date", -1)]
+    )
+    return record or {}
+
+@api_router.get("/patients/{patient_id}/export")
+async def export_patient_data(patient_id: str, current_user: dict = Depends(get_current_user)):
+    patient = await db.patients.find_one({"id": patient_id}, {"_id": 0})
+    if not patient:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado")
+    appointments = await db.appointments.find({"patient_id": patient_id}, {"_id": 0}).to_list(1000)
+    return {
+        "patient": patient,
+        "appointments": appointments,
+        "export_date": datetime.now(timezone.utc).isoformat(),
+        "lgpd_notice": "Dados exportados conforme LGPD"
+    }
+
+@api_router.post("/patients/{patient_id}/consent")
+async def sign_consent(patient_id: str, request: Request, current_user: dict = Depends(get_current_user)):
+    await db.patients.update_one({"id": patient_id}, {"$set": {
+        "consent_signed": True,
+        "consent_date": datetime.now(timezone.utc).isoformat()
+    }})
+    return {"message": "Consentimento assinado"}
+
+@api_router.get("/patients/{patient_id}/whatsapp-message")
+async def get_patient_whatsapp(patient_id: str, message_type: str, current_user: dict = Depends(get_current_user)):
+    patient = await db.patients.find_one({"id": patient_id}, {"_id": 0})
+    if not patient:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado")
+    template = await db.message_templates.find_one({"type": message_type}, {"_id": 0})
+    msg_template = _get_template_msg(template, message_type)
+    if msg_template:
+        message = (msg_template
+            .replace("{nome}", patient.get("name", ""))
+            .replace("{clinica}", "Nossa Clínica")
+        )
+        last_apt = await db.appointments.find_one(
+            {"patient_id": patient_id, "status": "completed"},
+            {"_id": 0}
+        )
+        if last_apt:
+            from datetime import datetime as _dt
+            try:
+                last_date = _dt.strptime(last_apt["date"], "%Y-%m-%d").strftime("%d/%m/%Y")
+                last_proc = f"{last_apt.get('procedure_name', '')} ({last_date})"
+            except Exception:
+                last_proc = last_apt.get("procedure_name", "")
+            message = message.replace("{ultimo_procedimento}", last_proc)
+        else:
+            message = message.replace("{ultimo_procedimento}", "N/A")
+    else:
+        message = f"Olá {patient['name']}!"
+    phone = patient["phone"].replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+    if not phone.startswith("55"):
+        phone = "55" + phone
+    return {"whatsapp_url": build_whatsapp_url(phone, message), "phone": phone, "message": message}
+
+@api_router.put("/patients/{patient_id}")
+async def update_patient(patient_id: str, patient: PatientUpdate, current_user: dict = Depends(get_current_user)):
     data = patient.model_dump(exclude_none=True)
-    await db.patients.update_one({"id": id}, {"$set": data})
+    await db.patients.update_one({"id": patient_id}, {"$set": data})
     return {"message": "Paciente atualizado"}
 
-@api_router.delete("/patients/{id}")
-async def delete_patient(id: str, current_user: dict = Depends(get_current_user)):
-    await db.patients.delete_one({"id": id})
+@api_router.delete("/patients/{patient_id}")
+async def delete_patient(patient_id: str, current_user: dict = Depends(get_current_user)):
+    await db.patients.delete_one({"id": patient_id})
     return {"message": "Paciente removido"}
-
-# ==================== PRONTUÁRIO ====================
 
 @api_router.post("/medical-records")
 async def create_medical_record(record: MedicalRecordCreate, current_user: dict = Depends(get_current_user)):
@@ -1010,10 +1098,17 @@ async def get_daily_summary(date: Optional[str] = None, current_user: dict = Dep
         "has_stock_issues": False
     }
 
-@api_router.put("/appointments/{id}")
-async def update_appointment(id: str, appo: AppointmentUpdate, current_user: dict = Depends(get_current_user)):
+@api_router.get("/appointments/{appointment_id}")
+async def get_appointment(appointment_id: str, current_user: dict = Depends(get_current_user)):
+    apt = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+    if not apt:
+        raise HTTPException(status_code=404, detail="Agendamento não encontrado")
+    return apt
+
+@api_router.put("/appointments/{appointment_id}")
+async def update_appointment(appointment_id: str, appo: AppointmentUpdate, current_user: dict = Depends(get_current_user)):
     data = appo.model_dump(exclude_none=True)
-    await db.appointments.update_one({"id": id}, {"$set": data})
+    await db.appointments.update_one({"id": appointment_id}, {"$set": data})
     return {"message": "Agendamento atualizado"}
 
 @api_router.get("/appointments/{appointment_id}/whatsapp")
@@ -1077,13 +1172,6 @@ async def get_whatsapp_link(appointment_id: str, template_id: str = "", message_
         )
     whatsapp_url = build_whatsapp_url(phone, message)
     return {"whatsapp_url": whatsapp_url, "phone": phone, "message": message, "confirmation_link": confirmation_link}
-
-@api_router.get("/appointments/{appointment_id}")
-async def get_appointment(appointment_id: str, current_user: dict = Depends(get_current_user)):
-    apt = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
-    if not apt:
-        raise HTTPException(status_code=404, detail="Agendamento não encontrado")
-    return apt
 
 @api_router.post("/appointments/{appointment_id}/complete")
 async def complete_appointment(appointment_id: str, current_user: dict = Depends(get_current_user)):
@@ -1731,100 +1819,9 @@ async def create_movement(movement: MovementCreate, current_user: dict = Depends
     movement_doc.pop("_id", None)
     return movement_doc
 
-# ==================== PACIENTES — extras ====================
-
-@api_router.get("/patients/{patient_id}")
-async def get_patient(patient_id: str, current_user: dict = Depends(get_current_user)):
-    patient = await db.patients.find_one({"id": patient_id}, {"_id": 0})
-    if not patient:
-        raise HTTPException(status_code=404, detail="Paciente não encontrado")
-    return patient
-
-@api_router.get("/patients/{patient_id}/history")
-async def get_patient_history(patient_id: str, current_user: dict = Depends(get_current_user)):
-    patient = await db.patients.find_one({"id": patient_id}, {"_id": 0})
-    if not patient:
-        raise HTTPException(status_code=404, detail="Paciente não encontrado")
-    appointments = await db.appointments.find({"patient_id": patient_id}, {"_id": 0}).sort("date", -1).to_list(1000)
-    return {"patient": patient, "appointments": appointments}
-
-@api_router.get("/patients/{patient_id}/anamnese")
-async def get_patient_anamnese(patient_id: str, current_user: dict = Depends(get_current_user)):
-    """Retorna a anamnese mais recente do paciente para pré-preencher nova consulta."""
-    record = await db.medical_records.find_one(
-        {"patient_id": patient_id, "anamnese": {"$exists": True, "$ne": None}},
-        {"_id": 0, "anamnese": 1, "date": 1},
-        sort=[("date", -1)]
-    )
-    return record or {}
-
-@api_router.get("/patients/{patient_id}/export")
-async def export_patient_data(patient_id: str, current_user: dict = Depends(get_current_user)):
-    patient = await db.patients.find_one({"id": patient_id}, {"_id": 0})
-    if not patient:
-        raise HTTPException(status_code=404, detail="Paciente não encontrado")
-    appointments = await db.appointments.find({"patient_id": patient_id}, {"_id": 0}).to_list(1000)
-    return {
-        "patient": patient,
-        "appointments": appointments,
-        "export_date": datetime.now(timezone.utc).isoformat(),
-        "lgpd_notice": "Dados exportados conforme LGPD"
-    }
-
-@api_router.post("/patients/{patient_id}/consent")
-async def sign_consent(patient_id: str, request: Request, current_user: dict = Depends(get_current_user)):
-    await db.patients.update_one({"id": patient_id}, {"$set": {
-        "consent_signed": True,
-        "consent_date": datetime.now(timezone.utc).isoformat()
-    }})
-    return {"message": "Consentimento assinado"}
-
-@api_router.get("/patients/{patient_id}/whatsapp-message")
-async def get_patient_whatsapp(patient_id: str, message_type: str, current_user: dict = Depends(get_current_user)):
-    patient = await db.patients.find_one({"id": patient_id}, {"_id": 0})
-    if not patient:
-        raise HTTPException(status_code=404, detail="Paciente não encontrado")
-    template = await db.message_templates.find_one({"type": message_type}, {"_id": 0})
-    msg_template = _get_template_msg(template, message_type)
-    if msg_template:
-        message = (msg_template
-            .replace("{nome}", patient.get("name", ""))
-            .replace("{clinica}", "Nossa Clínica")
-        )
-        last_apt = await db.appointments.find_one(
-            {"patient_id": patient_id, "status": "completed"},
-            {"_id": 0}
-        )
-        if last_apt:
-            from datetime import datetime as _dt
-            try:
-                last_date = _dt.strptime(last_apt["date"], "%Y-%m-%d").strftime("%d/%m/%Y")
-                last_proc = f"{last_apt.get('procedure_name', '')} ({last_date})"
-            except Exception:
-                last_proc = last_apt.get("procedure_name", "")
-            message = message.replace("{ultimo_procedimento}", last_proc)
-        else:
-            message = message.replace("{ultimo_procedimento}", "N/A")
-    else:
-        message = f"Ol\u00e1 {patient['name']}!"
-    phone = patient["phone"].replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
-    if not phone.startswith("55"):
-        phone = "55" + phone
-    return {"whatsapp_url": build_whatsapp_url(phone, message), "phone": phone, "message": message}
-
 # ==================== ALERTS ALL ====================
 
-@api_router.get("/patients/alerts/all")
-async def get_all_alerts(current_user: dict = Depends(get_current_user)):
-    birthdays = await get_birthday_alerts(current_user)
-    botox = await get_botox_alerts(current_user)
-    inactive = await get_inactive_alerts(current_user)
-    return {
-        "birthdays": birthdays,
-        "botox_returns": botox,
-        "inactive_patients": inactive,
-        "total_alerts": len(birthdays) + len(botox) + len(inactive)
-    }
+
 
 @api_router.get("/dashboard/patients")
 async def get_patients_dashboard(current_user: dict = Depends(get_current_user)):
@@ -3513,3 +3510,4 @@ def _build_finance_pdf(monthly_data, by_category, by_payment, summary, transacti
     doc.build(story, onFirstPage=_on_page, onLaterPages=_on_page)
     buf.seek(0)
     return buf
+
