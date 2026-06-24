@@ -563,7 +563,7 @@ const CRM = () => {
                   className="w-full gap-1.5"
                   onClick={(e) => { e.stopPropagation(); navigate(`/atendimento/${patient.id}`); }}
                 >
-                  <Stethoscope className="w-3.5 h-3.5" />
+                  <Syringe className="w-3.5 h-3.5" />
                   Iniciar Atendimento
                 </Button>
               </Card>
@@ -1069,3 +1069,4 @@ const CRM = () => {
 };
 
 export default CRM;
+
