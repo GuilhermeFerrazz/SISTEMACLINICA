@@ -1,9 +1,13 @@
 import { clsx } from "clsx";
 import { twMerge } from "tailwind-merge"
+import { Syringe } from "lucide-react";
 
 export function cn(...inputs) {
   return twMerge(clsx(inputs));
 }
+
+// Alias para ícones que o agente usa mas não existem no lucide-react desta versão
+export const Stethoscope = Syringe;
 
 /**
  * Garante que a URL base use HTTPS em produção.
