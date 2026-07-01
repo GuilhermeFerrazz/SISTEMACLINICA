@@ -267,7 +267,19 @@ const Products = () => {
     e.preventDefault();
     if (!editProduct) return;
     try {
-      await axios.put(`${API}/products/${editProduct.id}`, editData, { withCredentials: true });
+      const payload = { ...editData };
+      // Remove campos que podem causar erro 422 por string vazia
+      if (!payload.fill_date) delete payload.fill_date;
+      if (!payload.expiration_date) delete payload.expiration_date;
+      if (payload.cost_price === '' || payload.cost_price === null) {
+        delete payload.cost_price;
+      } else {
+        payload.cost_price = parseFloat(payload.cost_price) || 0;
+      }
+      if (payload.quantity !== undefined) {
+        payload.quantity = parseFloat(payload.quantity) || 0;
+      }
+      await axios.put(`${API}/products/${editProduct.id}`, payload, { withCredentials: true });
       toast.success('Produto atualizado com sucesso!');
       setIsEditOpen(false);
       setEditProduct(null);
